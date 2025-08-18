@@ -2,7 +2,6 @@
 
 [![DOI](https://zenodo.org/badge/274122364.svg)](https://zenodo.org/badge/latestdoi/274122364)
 ![PyPI - Version](https://img.shields.io/pypi/v/DeepSlice)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/DeepSlice)
 ![Pepy Total Downloads](https://img.shields.io/pepy/dt/DeepSlice)
 
 
