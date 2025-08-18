@@ -88,7 +88,6 @@ Now your model is ready to use, just direct it towards the folder containing the
  │   ├── brain_slice_2.png     
  │   ├── brain_slice_3.png
 ```                                                                                                                      
-In this parent directory there should be only one sub folder, in this example this is "your_brain_folder".               
 <br />To align these images using DeepSlice simply call                                                                  
 ```python                                                                                                                
 folderpath = 'examples/example_brain/GLTa/'
