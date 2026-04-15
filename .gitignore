@@ -37,3 +37,7 @@ pip-delete-this-directory.txt
 DeepSlice.egg-info
 test.py
 .vscode/settings.json
+
+# Ignore large NIfTI data (added by Copilot)
+DeepSlice/metadata/*.nii
+DeepSlice/metadata/*.nii.gz
