@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioSlide v1.1.0 — Tutorial</title>
+<style>
+:root{
+  --bg:#f5f8fc;--surface:#fff;--ink:#0f172a;--muted:#475569;--line:#dbe4ef;
+  --brand:#007ACC;--brand-strong:#005a9e;--brand-soft:#e0f2fe;
+  --ok:#0f766e;--warn:#92400e;--danger:#991b1b;
+  --shadow:0 8px 22px rgba(2,10,26,.08);
+  --sidebar-bg:linear-gradient(160deg,#0b1c2f 0%,#10233a 55%,#15324a 100%);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.65}
+a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
+
+/* LAYOUT */
+.page{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--sidebar-bg);color:#d5e4f4;border-right:1px solid #26405e;padding:14px 12px 20px;font-size:.84rem}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(125,211,252,.25);border-radius:3px}
+.brand{margin-bottom:10px;border:1px solid rgba(148,184,224,.28);background:rgba(8,20,36,.55);border-radius:10px;padding:10px 12px}
+.brand h1{font-size:.96rem;margin:0 0 2px;color:#f1f7ff}
+.brand p{margin:0;font-size:.73rem;color:#9ec1e2}
+.nav-group{margin:10px 0 4px;color:#7fa2c2;font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700}
+.nav-link{display:block;margin-bottom:2px;padding:4px 8px;border-radius:6px;color:#d5e4f4;border:1px solid transparent;font-size:.8rem}
+.nav-link:hover{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.28);text-decoration:none}
+.nav-link.active{background:rgba(14,165,233,.2);border-color:rgba(56,189,248,.45);color:#fff}
+.sidebar-footer{margin-top:14px;padding:8px;border-radius:8px;border:1px solid rgba(125,211,252,.24);background:rgba(2,15,30,.55);font-size:.74rem;text-align:center}
+.sidebar-footer a{color:#7dd3fc}
+
+/* MAIN */
+.main{padding:24px 28px;max-width:1100px}
+
+/* HERO */
+.hero{border-radius:14px;overflow:hidden;background:linear-gradient(125deg,#003d66 0%,#005a9e 48%,#007ACC 100%);color:#f5fbff;box-shadow:var(--shadow);margin-bottom:20px;padding:24px 28px}
+.hero h2{margin:0 0 6px;font-size:1.7rem;line-height:1.15}
+.hero p{margin:0 0 12px;font-size:.94rem;color:rgba(245,251,255,.88);max-width:68ch}
+.badges{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:.7rem;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.13)}
+
+/* LESSON */
+.lesson{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:16px;position:relative}
+.lesson h2{margin:0 0 8px;color:var(--brand-strong);font-size:1.2rem;border-bottom:2px solid var(--brand-soft);padding-bottom:6px}
+.lesson h3{margin:12px 0 6px;color:var(--ink);font-size:.96rem}
+.lesson h4{margin:10px 0 4px;color:#1e3a5f;font-size:.88rem}
+.lesson p{margin:0 0 8px;color:#24364b}
+.lesson ul,.lesson ol{margin:0 0 8px;padding-left:20px;color:#24364b}
+.lesson li{margin-bottom:3px}
+.lesson>p:last-child,.lesson>ul:last-child,.lesson>div:last-child{margin-bottom:0}
+.lesson-badge{position:absolute;top:14px;right:16px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:.68rem;font-weight:600;border:1px solid}
+.lb-beginner{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
+.lb-intermediate{background:#fff7ed;color:#92400e;border-color:#fed7aa}
+.lb-advanced{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+
+/* STEPS */
+.step{display:grid;grid-template-columns:38px 1fr;gap:10px;margin:12px 0;align-items:start}
+.step-num{width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;flex-shrink:0}
+.step-body{min-width:0}
+.step-body h4{margin:0 0 4px;font-size:.9rem;color:#0f172a}
+.step-body p{margin:0 0 4px;font-size:.85rem}
+
+/* TABLES */
+.ref-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.84rem}
+.ref-table th,.ref-table td{border:1px solid var(--line);padding:7px 9px;text-align:left}
+.ref-table th{background:#edf6ff;color:#133a62;font-weight:600;white-space:nowrap}
+.ref-table tr:hover td{background:#f8fbff}
+.ref-table td code{font-size:.82em}
+
+/* CODE */
+code,.kbd{font-family:Consolas,"Cascadia Code","SFMono-Regular",Menlo,Monaco,monospace}
+code{background:#edf4fc;border:1px solid #d9e8f8;border-radius:5px;padding:1px 5px;font-size:.84em}
+.sc{display:inline-block;background:#1e293b;color:#e2e8f0;border-radius:4px;padding:1px 5px;font-size:.72rem;font-family:Consolas,monospace;vertical-align:middle}
+pre{margin:8px 0;padding:10px 12px;border-radius:8px;border:1px solid #1f3652;background:#0f1b2d;color:#dbeafe;overflow:auto;font-size:.82rem}
+
+/* ADMONITIONS */
+.tip,.note,.warn,.danger{border-left:4px solid;border-radius:7px;padding:8px 10px;margin:10px 0;font-size:.85rem}
+.tip{background:#ecfdf5;border-color:#10b981}
+.note{background:#eff6ff;border-color:#3b82f6}
+.warn{background:#fff7ed;border-color:#f97316}
+.danger{background:#fef2f2;border-color:#ef4444}
+
+/* CARDS */
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.card h4{margin:0 0 4px;color:var(--brand-strong);font-size:.88rem}
+.card p{margin:0;font-size:.82rem;color:var(--muted)}
+
+/* CHECKLIST */
+.checklist{list-style:none;padding:0;margin:10px 0}
+.checklist li{padding:6px 0 6px 28px;position:relative;font-size:.88rem;border-bottom:1px solid var(--line)}
+.checklist li:last-child{border-bottom:none}
+.checklist li::before{content:"";position:absolute;left:2px;top:8px;width:16px;height:16px;border-radius:4px;border:2px solid var(--brand);background:var(--brand-soft)}
+
+/* OUTCOME */
+.outcome{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 12px;margin:10px 0}
+.outcome h4{margin:0 0 4px;color:#0369a1;font-size:.86rem}
+.outcome p,.outcome ul{font-size:.84rem;color:#0c4a6e}
+
+/* FIGURES */
+.figure{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#f8fbff}
+.figure .fig-inner{width:100%;display:flex;align-items:center;justify-content:center;min-height:100px;background:#0f1b2d;padding:14px}
+.figure figcaption{margin:0;padding:8px 10px;font-size:.78rem;color:#41566f;border-top:1px solid var(--line);background:#f3f8ff}
+.illus{display:flex;flex-direction:column;gap:5px;width:100%}
+.illus-row{display:flex;gap:5px;align-items:center}
+.illus-box{border-radius:5px;padding:6px 10px;font-size:.7rem;font-weight:600;text-align:center;color:#fff;flex:1}
+.illus-box.ib-blue{background:#007ACC}.illus-box.ib-dark{background:#333;color:#ddd}
+.illus-box.ib-teal{background:#0f766e}.illus-box.ib-green{background:#16a34a}
+.illus-box.ib-amber{background:#d97706}.illus-box.ib-purple{background:#7c3aed}
+.illus-box.ib-red{background:#dc2626}.illus-box.ib-pink{background:#db2777}
+.illus-arrow{font-size:1rem;color:#7dd3fc;text-align:center}
+
+/* ACCORDION */
+details{margin:6px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+details summary{padding:8px 12px;background:#f3f8ff;cursor:pointer;font-weight:600;font-size:.88rem;color:var(--brand-strong);user-select:none}
+details summary:hover{background:#e8f2ff}
+details[open] summary{border-bottom:1px solid var(--line)}
+details .detail-body{padding:10px 12px}
+
+/* STATUS */
+.status{display:inline-block;padding:1px 7px;border-radius:999px;font-size:.66rem;font-weight:600;vertical-align:middle}
+.status-ok{background:#d1fae5;color:#065f46}
+.status-beta{background:#fef3c7;color:#92400e}
+
+footer{text-align:center;color:#50657d;font-size:.82rem;padding:12px}
+
+/* TRANSITIONS */
+.lesson{transition:transform .22s cubic-bezier(.25,.46,.45,.94),box-shadow .22s ease}
+.lesson:hover{transform:translateY(-3px);box-shadow:0 14px 36px rgba(0,60,120,.1)}
+.card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.card:hover{transform:translateY(-4px);box-shadow:0 12px 28px rgba(0,122,204,.12);border-color:var(--brand)}
+.figure{transition:transform .25s ease,box-shadow .25s ease}
+.figure:hover{transform:scale(1.012);box-shadow:0 10px 30px rgba(0,122,204,.15)}
+details summary{transition:background .15s ease}
+.tip,.note,.warn,.danger{transition:transform .15s ease,box-shadow .15s ease}
+.tip:hover,.note:hover,.warn:hover,.danger:hover{transform:translateX(4px);box-shadow:2px 2px 12px rgba(0,0,0,.06)}
+
+/* RESPONSIVE */
+@media(max-width:1080px){.page{grid-template-columns:1fr}.sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid #26405e}}
+@media(max-width:780px){.main{padding:12px}.grid-2,.grid-3{grid-template-columns:1fr}.hero h2{font-size:1.4rem}}
+@media print{.sidebar{display:none}.page{grid-template-columns:1fr}.lesson{break-inside:avoid;box-shadow:none;border:1px solid #ccc}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ═══════════════════  SIDEBAR  ═══════════════════ -->
+<nav class="sidebar">
+<div class="brand">
+  <h1>BioSlide Tutorial</h1>
+  <p>v1.1.0 &mdash; Step-by-Step Guide</p>
+</div>
+
+<div class="nav-group">Foundations</div>
+<a class="nav-link" href="#prerequisites">Prerequisites</a>
+<a class="nav-link" href="#installation">Installation</a>
+<a class="nav-link" href="#ui-orientation">UI Orientation</a>
+
+<div class="nav-group">Core Workflow</div>
+<a class="nav-link" href="#lesson-project">Create a Project</a>
+<a class="nav-link" href="#lesson-import">Import Slides</a>
+<a class="nav-link" href="#lesson-preview">Preview &amp; Navigate</a>
+<a class="nav-link" href="#lesson-segment">Segment Tissue</a>
+<a class="nav-link" href="#lesson-refine">Refine Segmentation</a>
+<a class="nav-link" href="#lesson-tbi-reviewer">TBI Reviewer Workflow</a>
+<a class="nav-link" href="#lesson-measure">Measure</a>
+<a class="nav-link" href="#lesson-export">Export Results</a>
+
+<div class="nav-group">Advanced Features</div>
+<a class="nav-link" href="#lesson-collage">Build a Collage</a>
+<a class="nav-link" href="#lesson-animation">Animation Studio</a>
+<a class="nav-link" href="#lesson-3d">3D Reconstruction</a>
+<a class="nav-link" href="#lesson-batch">Batch Processing</a>
+<a class="nav-link" href="#lesson-tool-deep-dive">Complete Tool Deep Dive</a>
+
+<div class="nav-group">Appendices</div>
+<a class="nav-link" href="#tips">Tips &amp; Shortcuts</a>
+<a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+<a class="nav-link" href="#next-steps">Next Steps</a>
+
+<div class="sidebar-footer">
+  <a href="BioSlide-Manual.html">Open Reference Manual &rarr;</a>
+</div>
+</nav>
+
+<!-- ═══════════════════  MAIN CONTENT  ═══════════════════ -->
+<main class="main">
+
+<!-- ─── HERO ─── -->
+<header class="hero" id="top">
+  <h2>BioSlide v1.1.0 &mdash; Tutorial</h2>
+  <p>A hands-on, step-by-step guide to mastering BioSlide. This updated tutorial now includes detailed, practical use of every major tool, including advanced TBI reviewer export workflows, progress/cancel behavior, and full module-level drilldowns.</p>
+  <div class="badges">
+    <span class="badge">15 Lessons</span>
+    <span class="badge">Beginner &rarr; Advanced</span>
+    <span class="badge">~75 min</span>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════
+     LESSON 0: PREREQUISITES
+     ════════════════════════════════════════ -->
+<section class="lesson" id="prerequisites" data-search="prerequisites requirements before you begin system hardware software">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 0 &mdash; Prerequisites</h2>
+
+<p>Before starting, ensure you have:</p>
+
+<ul class="checklist">
+  <li>Python 3.10 or later installed</li>
+  <li>At least 8 GB RAM (16 GB+ recommended)</li>
+  <li>Windows 10/11 (64-bit)</li>
+  <li>One or more whole-slide image files (.ndpi, .svs, .mrxs, or .tif)</li>
+  <li>A text editor or IDE (optional, for configuration)</li>
+</ul>
+
+<div class="note"><strong>No GPU required.</strong> BioSlide works fully on CPU. CUDA GPU acceleration is optional and provides speed improvements for large slides.</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 1: INSTALLATION
+     ════════════════════════════════════════ -->
+<section class="lesson" id="installation" data-search="installation setup virtual environment pip requirements openslide launch">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 1 &mdash; Installation</h2>
+
+<p>Set up BioSlide in a clean virtual environment.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Clone the Repository</h4>
+    <pre>git clone https://github.com/your-org/BioSlide.git
+cd BioSlide</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Create a Virtual Environment</h4>
+    <pre>python -m venv .venv
+.venv\Scripts\activate</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Install Dependencies</h4>
+    <pre>pip install -r requirements.txt</pre>
+    <p>This installs PySide6, OpenCV, OpenSlide bindings, PyVista, Pydantic, and all supporting libraries.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Install OpenSlide (for proprietary WSI formats)</h4>
+    <pre>pip install openslide-bin</pre>
+    <p>Required for .ndpi, .svs, and .mrxs files. Standard TIFF files work without it.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Launch BioSlide</h4>
+    <pre>python main.py</pre>
+    <p>You should see a branded splash screen, then the Launcher Dashboard.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>BioSlide is installed and the Launcher Dashboard is visible.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 2: UI ORIENTATION
+     ════════════════════════════════════════ -->
+<section class="lesson" id="ui-orientation" data-search="ui orientation launcher main window tabs toolbar dock panels tour getting started">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 2 &mdash; UI Orientation</h2>
+
+<p>Take a quick tour of BioSlide&rsquo;s interface components.</p>
+
+<h3>Launcher Dashboard</h3>
+<p>The hub-style entry point. Six feature cards provide one-click access to each workflow. Below the cards you&rsquo;ll find quick actions (New Project, Open Project, Settings, Help) and a list of recent projects.</p>
+
+<h3>Main Window Layout</h3>
+<p>Once you open or create a project, the Main Window appears with:</p>
+
+<div class="grid-2">
+  <div class="card"><h4>Menu Bar</h4><p>Eight menus: File, Edit, View, Segmentation, Export, Tools, Debug, Help</p></div>
+  <div class="card"><h4>Toolbar</h4><p>Quick actions: New, Open, Save, Import, Undo, Redo, Zoom, Export</p></div>
+  <div class="card"><h4>Tab Bar</h4><p>Seven tabs: Preview, Segmentation, TBI Reviewer, Statistics, Collage, Animation, 3D Reconstruction</p></div>
+  <div class="card"><h4>Dock Panels</h4><p>Right side: Property Panel, Log Panel (<span class="sc">Ctrl+L</span>), Measurement Panel</p></div>
+  <div class="card"><h4>Central Canvas</h4><p>Active tab&rsquo;s content area &mdash; tile viewer for preview/segmentation</p></div>
+  <div class="card"><h4>Status Bar</h4><p>Bottom: status text, zoom level, GPU indicator</p></div>
+</div>
+
+<h3>Themes</h3>
+<p>BioSlide ships with three themes: <strong>High Contrast</strong> (default), <strong>Dark</strong>, and <strong>Light</strong>. Change via Edit &rarr; Preferences.</p>
+
+<div class="tip"><strong>Tip:</strong> Press <span class="sc">F1</span> anywhere to open the built-in tutorial dialog with guided overlay highlights.</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 3: CREATE A PROJECT
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-project" data-search="create new project hssp save file name location">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 3 &mdash; Create a Project</h2>
+
+<p>Projects organize your slides, masks, measurements, and settings in a single <code>.hssp</code> file.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>New Project</h4>
+    <p>Click <em>New Project</em> on the Launcher Dashboard, or press <span class="sc">Ctrl+N</span>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Name &amp; Location</h4>
+    <p>Enter a descriptive project name (e.g., <code>Brain_Study_2024</code>). Choose a save folder.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Confirm</h4>
+    <p>Click <em>Create</em>. The Main Window opens with your empty project loaded.</p>
+  </div>
+</div>
+
+<div class="note"><strong>Autosave:</strong> BioSlide saves your project every 5 minutes automatically. After a crash, you&rsquo;ll be offered the option to restore your last autosaved state.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>A new <code>.hssp</code> project file is created and the Main Window is ready for slides.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 4: IMPORT SLIDES
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-import" data-search="import slides wsi ndpi svs mrxs tif tiff file dialog open load">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 4 &mdash; Import Slides</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open the Import Dialog</h4>
+    <p>Click <em>Import Slides</em> in the toolbar, or press <span class="sc">Ctrl+I</span>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Select Files</h4>
+    <p>Browse to your WSI files. Supported formats:</p>
+    <table class="ref-table">
+    <thead><tr><th>Extension</th><th>Vendor</th></tr></thead>
+    <tbody>
+    <tr><td><code>.ndpi</code></td><td>Hamamatsu NanoZoomer</td></tr>
+    <tr><td><code>.svs</code></td><td>Aperio / Leica</td></tr>
+    <tr><td><code>.mrxs</code></td><td>3DHISTECH (MIRAX)</td></tr>
+    <tr><td><code>.tif / .tiff</code></td><td>Standard / pyramidal TIFF</td></tr>
+    </tbody>
+    </table>
+    <p>You can select multiple files at once.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Confirm Import</h4>
+    <p>Click <em>Open</em>. Slides appear in the file list on the left of the Preview tab.</p>
+  </div>
+</div>
+
+<div class="tip"><strong>Tip:</strong> WSI files can be very large (several GB). BioSlide uses tiled loading, so only visible portions are loaded into memory.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Your slides are loaded and visible in the Preview tab&rsquo;s file list.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 5: PREVIEW & NAVIGATE
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-preview" data-search="preview navigate zoom pan scroll wheel tile viewer single grid view thumbnail slide metadata">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 5 &mdash; Preview &amp; Navigate</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Select a Slide</h4>
+    <p>Click any slide in the left file list. It loads in the central tile viewer.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Zoom</h4>
+    <p>Use the <strong>scroll wheel</strong> to zoom in/out. Zoom centers on the cursor position for precise navigation. Alternatively use <span class="sc">Ctrl++</span> and <span class="sc">Ctrl+&minus;</span>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Pan</h4>
+    <p><strong>Click and drag</strong> anywhere on the canvas to move the view.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Region Zoom</h4>
+    <p>Click the <em>Region Zoom</em> tool in the toolbar, then draw a rectangle on the slide. The view zooms to fit that rectangle exactly.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Grid View</h4>
+    <p>Switch to <em>Grid View</em> mode to see thumbnail overviews of all loaded slides simultaneously. Click any thumbnail to switch back to single view for that slide.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>View Slide Information</h4>
+    <p>Check the Property Panel (right side) for pixel dimensions, microns per pixel (MPP), vendor, and file path.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You can smoothly navigate multi-gigapixel slides at any zoom level.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 6: SEGMENT TISSUE
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-segment" data-search="segment tissue auto segmentation manual magic wand lasso eraser merge split algorithms pipeline threshold">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 6 &mdash; Segment Tissue</h2>
+
+<p>Segmentation identifies tissue regions and separates them from the slide background.</p>
+
+<h3>Option A &mdash; Automatic Segmentation</h3>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Switch to the Segmentation Tab</h4>
+    <p>Click the <em>Segmentation</em> tab in the tab bar.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Click &ldquo;Auto Segment&rdquo;</h4>
+    <p>BioSlide runs the automatic pipeline in the background:</p>
+    <div class="figure">
+    <div class="fig-inner">
+      <div class="illus">
+        <div class="illus-row">
+          <div class="illus-box ib-blue">Downsample</div>
+          <div class="illus-arrow">&rarr;</div>
+          <div class="illus-box ib-teal">Dual-Space Detection</div>
+          <div class="illus-arrow">&rarr;</div>
+          <div class="illus-box ib-green">Morphology Cleanup</div>
+          <div class="illus-arrow">&rarr;</div>
+          <div class="illus-box ib-amber">Contouring</div>
+        </div>
+      </div>
+    </div>
+    <figcaption>The pipeline detects tissue in both HSV and Lab color spaces, applies morphological cleanup, and extracts contours</figcaption>
+    </div>
+    <p>Progress is shown in the status bar. The UI remains responsive during processing.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Review Results</h4>
+    <p>Detected slices appear as color-coded overlays on the slide and in the <em>Slice List</em> panel on the right. Each slice gets an ID and thumbnail.</p>
+  </div>
+</div>
+
+<h3>Option B &mdash; Manual Tools</h3>
+<p>If automatic detection misses tissue or includes artifacts, use manual tools:</p>
+
+<table class="ref-table">
+<thead><tr><th>Tool</th><th>Shortcut</th><th>When to Use</th></tr></thead>
+<tbody>
+<tr><td><strong>Magic Wand</strong></td><td><span class="sc">W</span></td><td>Click to flood-fill a region with consistent staining. Adjust tolerance (0&ndash;255) in the Property Panel.</td></tr>
+<tr><td><strong>Lasso</strong></td><td><span class="sc">L</span></td><td>Draw a freehand polygon around tissue that auto-detect missed.</td></tr>
+<tr><td><strong>Eraser</strong></td><td><span class="sc">E</span></td><td>Remove parts of a mask: brush, path, or polygon modes.</td></tr>
+</tbody>
+</table>
+
+<h3>Merge &amp; Split</h3>
+<ul>
+  <li><strong>Merge</strong> (<span class="sc">Ctrl+M</span>): Select 2+ slices &rarr; combine into one</li>
+  <li><strong>Split</strong> (<span class="sc">Ctrl+Shift+S</span>): Separate disconnected regions into individual slices</li>
+</ul>
+
+<div class="warn"><strong>Caution:</strong> Very low minimum area thresholds may produce many small noise artifacts. Start with the default and lower it only if tissue is being missed.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>All tissue regions are segmented with clean masks. Each slice has an ID, thumbnail, and color overlay.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 7: REFINE SEGMENTATION
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-refine" data-search="refine segmentation grabcut interactive keep remove strokes boundary refinement edge-aware non-destructive">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 7 &mdash; Refine Segmentation</h2>
+
+<p>After automatic segmentation, boundaries may need fine-tuning. BioSlide provides interactive GrabCut-based refinement.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open Refinement</h4>
+    <p>Right-click a slice in the Slice List and select <em>Refine Segmentation</em>. The refinement dialog opens.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Mark Areas to Keep</h4>
+    <p>Click <em>Mark Areas to Keep</em> to select the green brush. Paint strokes over tissue regions that should be included but were missed.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Mark Areas to Remove</h4>
+    <p>Click <em>Mark Areas to Remove</em> to select the red brush. Paint strokes over background regions that were incorrectly included.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Watch GrabCut Refine</h4>
+    <p>The mask updates in real-time as GrabCut propagates your corrections to similar pixels. Repeat keep/remove strokes as needed.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Apply or Cancel</h4>
+    <p>Click <em>Apply</em> to accept the refined mask, or <em>Cancel</em> to discard changes.</p>
+  </div>
+</div>
+
+<div class="tip"><strong>Tip:</strong> Start with broad strokes on obvious errors. GrabCut is smart about propagating corrections to neighboring pixels with similar colors.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Your segmentation masks have clean, accurate boundaries ready for export or measurement.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 7A: TBI REVIEWER WORKFLOW
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-tbi-reviewer" data-search="tbi reviewer segmentation threshold merge roi list selection tool measurement midline progress cancel eta export settings tiff png export review viewer">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 7A &mdash; TBI Reviewer Workflow</h2>
+
+<p>The TBI Reviewer is a complete case-review pipeline. This lesson covers the full toolchain: segmentation controls, ROI quality checks, approval flow, export settings, progress/cancel handling, and post-export viewer QA.</p>
+
+<h3>Part A &mdash; Load and Prepare the Case</h3>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open TBI Reviewer</h4>
+    <p>Use the toolbar <em>TBI Reviewer</em> button or press <span class="sc">Ctrl+Shift+T</span>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Load a Case Folder and Reviewer Context</h4>
+    <p>Click <em>Browse</em>, select your case folder, then click <em>Load Case</em>. The gallery fills with slice files.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Inspect the Warning List First</h4>
+    <p>Use warning items to jump directly to problematic slides. Clicking a warning can open and focus the relevant ROI region automatically.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Open a Representative Slice on Canvas</h4>
+    <p>In Gallery View, click the <em>Open: filename</em> button for the slice you want to segment.</p>
+  </div>
+</div>
+
+<h3>Part B &mdash; Segment and Validate ROIs</h3>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Segment in Basic Mode</h4>
+    <p>Adjust <em>Threshold</em> and <em>Merge Radius</em>, then click <em>1) Segment Current Slice</em>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>Validate with ROI List and Canvas Selection</h4>
+    <p>Open the collapsible ROI List (sorted smallest first) to catch tiny outliers quickly. Use <span class="sc">S</span> for Selection Tool and confirm list/canvas selection stay synchronized.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <h4>Apply Across Files</h4>
+    <p>Click <em>2) Apply Current ROI Layout to All Slices</em> to propagate to the rest of the case. Use <em>Undo Last Apply (Ctrl+Z)</em> if needed.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <h4>Use Advanced Viewer Tools Only When Needed</h4>
+    <p>Click <em>Show Advanced Controls</em> for measurement (<span class="sc">M</span>), midline (<span class="sc">L</span>), LUT, scoring, and notes. Keep this collapsed for maximum canvas space during routine segmentation.</p>
+  </div>
+</div>
+
+<h3>Part C &mdash; Approval, Export, and Review</h3>
+
+<div class="step">
+  <div class="step-num">9</div>
+  <div class="step-body">
+    <h4>Approve Slides</h4>
+    <p>Use <em>Approve Current WSI Slide</em> as you progress. The reviewer can auto-advance to the next reviewable slide to accelerate case completion.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">10</div>
+  <div class="step-body">
+    <h4>Set Export Profile and Format</h4>
+    <p>Click <em>Change Export Settings...</em> and choose profile (Fast, Balanced, High) and output format (TIFF or PNG). TIFF is the recommended default for speed and compatibility in this workflow.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">11</div>
+  <div class="step-body">
+    <h4>Run Export and Monitor Progress</h4>
+    <p>Click <em>Export Approved Tissue Slices</em>. Watch synchronized inline + modal progress. ETA shows both remaining duration and expected finish time. Use <em>Cancel Current Process</em> if parameters need correction.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">12</div>
+  <div class="step-body">
+    <h4>Perform QA in Export Review Viewer</h4>
+    <p>Open exported slices in the review viewer (TIFF/TIF/PNG supported). Navigate with arrows, Home/End, thumbnails, and <span class="sc">Ctrl+Wheel</span> zoom. Later, use <em>Reopen Last Exported Set</em> to return without rerunning export.</p>
+  </div>
+</div>
+
+<h3>TBI Reviewer Tool Map</h3>
+<table class="ref-table">
+<thead><tr><th>Group</th><th>Tools</th><th>Why It Matters</th></tr></thead>
+<tbody>
+<tr><td>Core Segmentation</td><td>Threshold, Merge Radius, Segment Current, Apply Layout, Undo Apply</td><td>Fast case-wide ROI standardization</td></tr>
+<tr><td>Validation</td><td>ROI List, Selection Tool, warning jump-to-slide, zoom controls</td><td>Catches outliers and placement mistakes early</td></tr>
+<tr><td>Review</td><td>Approve Current, Approve All, score/notes, sync output</td><td>Builds auditable review results</td></tr>
+<tr><td>Export + QA</td><td>Change Export Settings, Export Approved, progress cancel/ETA, Reopen Last Exported Set</td><td>Predictable, recoverable export pipeline</td></tr>
+</tbody>
+</table>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You can run a complete TBI case workflow: segment, validate, approve, export in one selected format, and review outputs with full traceability.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 8: MEASURE
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-measure" data-search="measure distance area perimeter angle ruler calibration mpp micrometer">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 8 &mdash; Measure</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open the Measurement Panel</h4>
+    <p>Go to <em>Tools &rarr; Toggle Measurements Panel</em>. The panel appears on the right.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Distance Measurement</h4>
+    <p>Select the <em>Distance</em> tool. Click two points on the slide to draw a ruler line. The distance appears in &micro;m (if MPP metadata is available) or pixels.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Area &amp; Perimeter</h4>
+    <p>Segmented slices have automatic area and perimeter values. Check the Slice List or Statistics tab for these metrics.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>View Statistics</h4>
+    <p>Switch to the <em>Statistics</em> tab to see summary statistics (mean, median, std dev, range, quartiles, CV, skewness, kurtosis) and distribution analysis.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Export to CSV</h4>
+    <p>Click <em>Export CSV</em> in the Statistics tab to save all measurements and statistics for analysis in Excel, R, or Python.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Tissue regions are measured with calibrated units. Statistics are computed and exported.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 9: EXPORT RESULTS
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-export" data-search="export results png jpeg tiff pdf profile feathered alpha metadata sidecar filename template panel export quick export">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 9 &mdash; Export Results</h2>
+
+<h3>Standard Export</h3>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open the Export Dialog</h4>
+    <p>Press <span class="sc">Ctrl+E</span> or go to <em>Export &rarr; Export Slices</em>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Choose a Format</h4>
+    <table class="ref-table">
+    <thead><tr><th>Format</th><th>Best For</th></tr></thead>
+    <tbody>
+    <tr><td><strong>PNG</strong></td><td>Alpha transparency, metadata embedding, presentations</td></tr>
+    <tr><td><strong>JPEG</strong></td><td>Quick sharing, web (smaller files)</td></tr>
+    <tr><td><strong>TIFF</strong></td><td>Archival, lossless, further processing</td></tr>
+    <tr><td><strong>PDF</strong></td><td>Publications, printing</td></tr>
+    </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Select an Export Profile</h4>
+    <p>Built-in profiles: <em>PowerPoint PNG</em>, <em>High Quality TIFF</em>, <em>Web JPEG</em>. Or create a custom profile via the <em>Profile Manager</em>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Set Output Folder</h4>
+    <p>Browse for the destination directory. Configure filename templates with placeholders: <code>{slide_name}</code>, <code>{slice_id}</code>, <code>{index}</code>, <code>{timestamp}</code>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Export</h4>
+    <p>Click <em>Export</em>. Each slice is saved with optional JSON sidecar metadata (source slide, coordinates, algorithm, timestamp).</p>
+  </div>
+</div>
+
+<h3>TBI Reviewer Export (Detailed)</h3>
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>Use Single-Format Reviewer Export</h4>
+    <p>In TBI Reviewer, exports are generated in one format per run (TIFF or PNG) to save time. Choose format via <em>Change Export Settings...</em> before exporting approved slices.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <h4>Prefer TIFF Unless Compatibility Requires PNG</h4>
+    <p>TIFF is typically faster and better for large pathology workflows. Use PNG only when downstream tooling requires it.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <h4>Verify with Export Review Viewer</h4>
+    <p>After export, open the exported set and verify ordering, metadata, and image quality before moving to animation, collage, or external analysis.</p>
+  </div>
+</div>
+
+<h3>Special Export Options</h3>
+<div class="grid-3">
+  <div class="card"><h4>Feathered Alpha</h4><p>Enable for PNG to get Gaussian-blurred alpha edges &mdash; natural-looking tissue boundaries</p></div>
+  <div class="card"><h4>Quick Export</h4><p>Rapid single-image export for fast iteration &mdash; right-click a slice</p></div>
+  <div class="card"><h4>Panel Export</h4><p>Split a WSI region into printable panels with configurable rows, columns, paper size, and DPI</p></div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Segmented tissue images are saved with reproducible settings and metadata, and reviewer exports can be QA-checked immediately.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 10: BUILD A COLLAGE
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-collage" data-search="collage builder grid template drag drop labels dividers publication export pdf">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 10 &mdash; Build a Collage</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Switch to the Collage Tab</h4>
+    <p>Click the <em>Collage</em> tab in the tab bar.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Choose a Template</h4>
+    <p>Select from pre-built templates (2&times;2, 3&times;3, 4&times;5, Panoramic) or create a custom grid with the row/column spinboxes.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Drag Slices onto Cells</h4>
+    <p>Your segmented slices appear as draggable thumbnails on the left. Drag them onto grid cells. Rearrange by dragging between cells.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Customize Appearance</h4>
+    <ul>
+      <li><strong>Spacing</strong> &mdash; Adjust gap between cells</li>
+      <li><strong>Dividers</strong> &mdash; Add lines between cells (color, thickness)</li>
+      <li><strong>Background</strong> &mdash; Set fill color behind the grid</li>
+      <li><strong>Labels</strong> &mdash; Add text captions to individual cells</li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Preview &amp; Export</h4>
+    <p>The live preview shows the exact output. Export to PNG (with transparency), JPEG, or publication-ready PDF with configurable DPI.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>A professional collage image ready for publication figures or presentations.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 11: ANIMATION STUDIO
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-animation" data-search="animation studio camera keyframes roi region of interest easing branding overlay timeline shot list comparison modes export mp4 gif mov png sequence">
+<span class="lesson-badge lb-advanced">Advanced</span>
+<h2>Lesson 11 &mdash; Animation Studio</h2>
+
+<p>Create cinematic camera animations from whole-slide images for presentations and publications.</p>
+
+<h3>Part A &mdash; Set Up the Source</h3>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Switch to the Animation Tab</h4>
+    <p>Click the <em>Animation</em> tab.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Load a Source</h4>
+    <p>Load a WSI slide or regular image as your animation canvas.</p>
+  </div>
+</div>
+
+<h3>Part B &mdash; Define Regions of Interest</h3>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Draw ROIs</h4>
+    <p>Use the ROI drawing tools to define areas of interest. Five shape types are available:</p>
+    <table class="ref-table">
+    <thead><tr><th>Shape</th><th>Use Case</th></tr></thead>
+    <tbody>
+    <tr><td>Rectangle</td><td>Standard region selection</td></tr>
+    <tr><td>Ellipse</td><td>Organic / circular features</td></tr>
+    <tr><td>Polygon</td><td>Complex boundaries</td></tr>
+    <tr><td>Freehand</td><td>Free-drawn irregular regions</td></tr>
+    <tr><td>Point</td><td>Specific coordinate for zoom target</td></tr>
+    </tbody>
+    </table>
+    <p>ROIs can be moved, resized (8 handles), and styled with presets via the ROI Manager.</p>
+  </div>
+</div>
+
+<h3>Part C &mdash; Create Camera Keyframes</h3>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Add Keyframes</h4>
+    <p>Navigate to a view (zoom/pan) and add a keyframe. Each keyframe captures:</p>
+    <ul>
+      <li>Center coordinates (x, y)</li>
+      <li>Zoom level</li>
+      <li>Transition duration (seconds)</li>
+      <li>Easing curve (Linear, Ease In, Ease Out, Ease In-Out, Slow, Fast, Bezier)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Arrange on the Timeline</h4>
+    <p>Drag keyframes on the <em>Keyframe Timeline</em> to reorder. Click any keyframe to edit its parameters. Use <em>Animation Presets</em> for common patterns (overview scan, ROI zoom).</p>
+  </div>
+</div>
+
+<h3>Part D &mdash; Add Branding &amp; Overlays</h3>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>Configure Branding</h4>
+    <ul>
+      <li><strong>Scale bar</strong> &mdash; Position, color, thickness, font size; calibrated from MPP</li>
+      <li><strong>Logo watermark</strong> &mdash; Anchor corner, opacity, max size</li>
+      <li><strong>Text overlays</strong> &mdash; Title, subtitle, caption with font settings</li>
+    </ul>
+    <p>Save overlay configurations as templates for reuse across projects.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <h4>Emphasis Effects (optional)</h4>
+    <p>Apply a <strong>Spotlight</strong> effect to highlight specific ROIs with dimmed surroundings. Additional effects (Vignette, Arrow, Callout, Pulse) are planned for future releases.</p>
+  </div>
+</div>
+
+<h3>Part E &mdash; Comparison Modes (optional)</h3>
+
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <h4>Compare Views</h4>
+    <p>Use comparison layouts for side-by-side analysis:</p>
+    <ul>
+      <li><strong>Side-by-Side</strong> &mdash; Two views next to each other</li>
+      <li><strong>Swipe</strong> &mdash; Draggable divider between two views</li>
+      <li><strong>2&times;2 Grid</strong> &mdash; Four simultaneous views</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Part F &mdash; Export the Animation</h3>
+
+<div class="step">
+  <div class="step-num">9</div>
+  <div class="step-body">
+    <h4>Choose Format &amp; Export</h4>
+    <table class="ref-table">
+    <thead><tr><th>Format</th><th>Use Case</th></tr></thead>
+    <tbody>
+    <tr><td><strong>MP4</strong></td><td>Standard video for presentations</td></tr>
+    <tr><td><strong>GIF</strong></td><td>Animated loops for web/social</td></tr>
+    <tr><td><strong>MOV</strong></td><td>High-quality QuickTime video</td></tr>
+    <tr><td><strong>PNG Sequence</strong></td><td>Individual frames for post-processing</td></tr>
+    </tbody>
+    </table>
+    <p>Set resolution preset (1080p, 4K, Square) and frame rate.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>A professional camera animation video showcasing your slide with smooth transitions, branding, and optional effects.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 12: 3D RECONSTRUCTION
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-3d" data-search="3d reconstruction serial sections alignment stack rendering pyvista vtk fly-through orbit video">
+<span class="lesson-badge lb-advanced">Advanced</span>
+<h2>Lesson 12 &mdash; 3D Reconstruction</h2>
+
+<p>Build a pseudo-3D volume from serial histological sections.</p>
+
+<h3>Prerequisites</h3>
+<p>You need exported PNG slice images from a serial-sectioning experiment (sequential numbered files from the same specimen).</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Switch to the 3D Reconstruction Tab</h4>
+    <p>Click the <em>3D Recon</em> tab.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Load Slice Images</h4>
+    <p>Select a directory containing your PNG slice files. BioSlide auto-detects slice ordering from filenames using 7 regex patterns (e.g., <code>slice_001.png</code>, <code>brain_s12.png</code>).</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Sort &amp; Reorder</h4>
+    <p>Verify the slice ordering. Reverse if needed. Check for gaps or duplicates (auto-detected).</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Preprocess</h4>
+    <p>Configure preprocessing options: grayscale conversion, background removal, intensity normalization, and optional downsampling for faster preview.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Align Slices</h4>
+    <p>Choose a feature detector (ORB, SIFT, or AKAZE) and run rigid registration. BioSlide aligns adjacent slices using feature matching with Lowe&rsquo;s ratio test and RANSAC outlier rejection.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>Render in 3D</h4>
+    <p>Aligned slices are displayed as textured planes in a PyVista/VTK viewport. Adjust:</p>
+    <ul>
+      <li><strong>Slice spacing</strong> &mdash; Z-distance between planes</li>
+      <li><strong>Opacity</strong> &mdash; Per-slice or global transparency</li>
+      <li><strong>Transform</strong> &mdash; Yaw, pitch, roll, scale</li>
+      <li><strong>Show every Nth</strong> &mdash; Display subset for performance</li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <h4>Choose a View Preset</h4>
+    <p>One-click camera presets: Coronal, Sagittal, Dorsal, or custom orientations.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <h4>Animate &amp; Export</h4>
+    <p>Create 3D animations:</p>
+    <ul>
+      <li><strong>Grid &rarr; 3D Build</strong> &mdash; Transition from flat grid to 3D stack</li>
+      <li><strong>Fly-through</strong> &mdash; Camera travels through the Z-axis</li>
+      <li><strong>Orbit</strong> &mdash; Camera circles around the volume</li>
+    </ul>
+    <p>Export as MP4 with configurable resolution.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>A 3D rendering of your serial sections with interactive navigation and exportable animation.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 13: BATCH PROCESSING
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-batch" data-search="batch processing export queue multi-slide pause resume cancel segmentation lobe">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 13 &mdash; Batch Processing</h2>
+
+<h3>Batch Export</h3>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open the Batch Queue</h4>
+    <p>Go to <em>Export &rarr; Export Slices</em> with multiple slides loaded.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Configure &amp; Start</h4>
+    <p>Select an export profile and output directory. Start the batch job. Each slide is processed sequentially.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Monitor Progress</h4>
+    <p>The Batch Queue Dialog shows per-job progress bars. Use the controls:</p>
+    <ul>
+      <li><strong>Pause</strong> &mdash; Temporarily halt processing</li>
+      <li><strong>Resume</strong> &mdash; Continue from where you paused</li>
+      <li><strong>Cancel</strong> &mdash; Stop the entire batch</li>
+    </ul>
+    <p>Errors for individual items are displayed in the dialog.</p>
+  </div>
+</div>
+
+<h3>Batch Segmentation</h3>
+<p>Go to <em>Segmentation &rarr; Batch Segment All</em> to apply automatic segmentation to all loaded slides at once.</p>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Multiple slides are exported or segmented efficiently with full progress tracking and error handling.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     LESSON 14: COMPLETE TOOL DEEP DIVE
+     ════════════════════════════════════════ -->
+<section class="lesson" id="lesson-tool-deep-dive" data-search="complete tool deep dive all tools walkthrough preview segmentation tbi statistics collage animation 3d">
+<span class="lesson-badge lb-advanced">Advanced</span>
+<h2>Lesson 14 &mdash; Complete Tool Deep Dive</h2>
+
+<p>This drilldown is designed for users who already know the basic flow and now need confident, detailed use of every major tool.</p>
+
+<h3>Tool Drill Plan</h3>
+<table class="ref-table">
+<thead><tr><th>Module</th><th>Tools to Practice</th><th>Validation Goal</th></tr></thead>
+<tbody>
+<tr><td>Preview</td><td>Single/Grid view, region zoom, panel export</td><td>Navigate and isolate target tissue quickly</td></tr>
+<tr><td>Segmentation</td><td>Auto segment, Magic Wand, Lasso, Eraser, Merge/Split, Refine Segmentation</td><td>Produce clean masks on difficult slides</td></tr>
+<tr><td>TBI Reviewer</td><td>Threshold/Merge tuning, ROI list checks, approval flow, export settings, progress cancel</td><td>Complete case export with predictable timing</td></tr>
+<tr><td>Statistics</td><td>Descriptive metrics, distribution, CSV export</td><td>Create analyzable case summary outputs</td></tr>
+<tr><td>Collage</td><td>Template selection, drag-drop assignment, labels/dividers, export</td><td>Generate publication figure panel</td></tr>
+<tr><td>Animation</td><td>ROI shapes, keyframes, easing, overlays, export formats</td><td>Create one polished motion narrative</td></tr>
+<tr><td>3D Reconstruction</td><td>Ordering, preprocess, ORB/SIFT/AKAZE alignment, view presets, 3D animation windows</td><td>Generate stable interactive stack and MP4</td></tr>
+</tbody>
+</table>
+
+<h3>Execution Checklist</h3>
+<ul class="checklist">
+  <li>Run one full segmentation cycle with both auto and manual tools on the same slide.</li>
+  <li>In TBI Reviewer, cancel one long-running operation intentionally, then rerun with corrected settings.</li>
+  <li>Export approved TBI slices as TIFF and reopen them in Export Review Viewer.</li>
+  <li>Create one collage with labels and divider styling suited for publication.</li>
+  <li>Build a 5+ keyframe animation including overlays (scale bar, text, logo).</li>
+  <li>Render a 3D stack, test at least two detector modes, and export one camera animation.</li>
+  <li>Export a statistics CSV and verify downstream readability in your analysis tool.</li>
+</ul>
+
+<div class="tip"><strong>Tip:</strong> If your pipeline is throughput-focused, standardize on TIFF exports for reviewer output and reserve PNG for presentation-specific outputs.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You can use the entire BioSlide toolset with operational confidence, not just the beginner path.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════
+     TIPS & SHORTCUTS
+     ════════════════════════════════════════ -->
+<section class="lesson" id="tips" data-search="tips shortcuts keyboard hotkeys best practices productivity efficiency">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Tips &amp; Shortcuts</h2>
+
+<h3>Essential Keyboard Shortcuts</h3>
+<div class="grid-2">
+<div>
+<table class="ref-table">
+<thead><tr><th colspan="2">File &amp; Project</th></tr></thead>
+<tbody>
+<tr><td><span class="sc">Ctrl+N</span></td><td>New Project</td></tr>
+<tr><td><span class="sc">Ctrl+O</span></td><td>Open Project</td></tr>
+<tr><td><span class="sc">Ctrl+S</span></td><td>Save</td></tr>
+<tr><td><span class="sc">Ctrl+I</span></td><td>Import Slides</td></tr>
+<tr><td><span class="sc">Ctrl+E</span></td><td>Export</td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<table class="ref-table">
+<thead><tr><th colspan="2">Tools &amp; View</th></tr></thead>
+<tbody>
+<tr><td><span class="sc">W</span></td><td>Magic Wand</td></tr>
+<tr><td><span class="sc">L</span></td><td>Lasso</td></tr>
+<tr><td><span class="sc">E</span></td><td>Eraser</td></tr>
+<tr><td><span class="sc">Ctrl+Z / Y</span></td><td>Undo / Redo</td></tr>
+<tr><td><span class="sc">Ctrl+L</span></td><td>Toggle Log Panel</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<h3>Best Practices</h3>
+<ul>
+  <li><strong>Save frequently</strong> &mdash; <span class="sc">Ctrl+S</span> saves your project. Autosave runs every 5 minutes as a safety net.</li>
+  <li><strong>Start coarse, then refine</strong> &mdash; Run auto-segmentation first, then fix issues with manual tools and GrabCut refinement.</li>
+  <li><strong>Use export profiles</strong> &mdash; Create profiles for your common output needs to avoid reconfiguring every time.</li>
+  <li><strong>Check the Log Panel</strong> &mdash; <span class="sc">Ctrl+L</span> reveals detailed processing messages useful for debugging.</li>
+  <li><strong>Use grid view</strong> &mdash; Preview tab&rsquo;s grid mode gives you an overview of all imported slides at a glance.</li>
+  <li><strong>Keep your slides on fast storage</strong> &mdash; SSD storage dramatically improves tile loading speed for large WSIs.</li>
+</ul>
+</section>
+
+<!-- ════════════════════════════════════════
+     TROUBLESHOOTING
+     ════════════════════════════════════════ -->
+<section class="lesson" id="troubleshooting" data-search="troubleshooting errors issues problems solutions common fix debug">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Troubleshooting</h2>
+
+<table class="ref-table">
+<thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+<tbody>
+<tr><td>BioSlide won&rsquo;t start</td><td>Check: <code>pip install -r requirements.txt</code> &mdash; verify all dependencies installed</td></tr>
+<tr><td>&ldquo;OpenSlide DLL not found&rdquo;</td><td>Run <code>pip install openslide-bin</code></td></tr>
+<tr><td>Slide file won&rsquo;t open</td><td>Verify the file format is supported (.ndpi, .svs, .mrxs, .tif)</td></tr>
+<tr><td>No slices detected after auto-segment</td><td>Lower the minimum area threshold in segmentation settings</td></tr>
+<tr><td>Slow performance on large slides</td><td>Close other applications; BioSlide uses tiled loading but benefits from available RAM</td></tr>
+<tr><td>3D tab is blank / errors</td><td>Install PyVista: <code>pip install pyvista</code>; verify OpenGL support</td></tr>
+<tr><td>Crash during processing</td><td>Check the autosave recovery dialog on next launch</td></tr>
+<tr><td>HiDPI scaling looks wrong</td><td>Set environment variable: <code>QT_SCALE_FACTOR=1</code></td></tr>
+</tbody>
+</table>
+
+<h3>Debug Tools</h3>
+<p>The <em>Debug</em> menu provides: Memory Monitor, System Information, Error Log Viewer, and Error Report generator for filing bugs.</p>
+</section>
+
+<!-- ════════════════════════════════════════
+     NEXT STEPS
+     ════════════════════════════════════════ -->
+<section class="lesson" id="next-steps" data-search="next steps continue learning manual reference documentation further reading">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Next Steps</h2>
+
+<p>Congratulations! You&rsquo;ve completed the BioSlide tutorial. Here&rsquo;s where to go next:</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>Reference Manual</h4>
+    <p>Deep-dive into every feature, dialog, and configuration option: <a href="BioSlide-Manual.html">Open Manual</a></p>
+  </div>
+  <div class="card">
+    <h4>Keyboard Shortcuts</h4>
+    <p>Master all shortcuts for maximum efficiency &mdash; see the <a href="BioSlide-Manual.html#shortcuts">Shortcuts Reference</a></p>
+  </div>
+  <div class="card">
+    <h4>Architecture</h4>
+    <p>Understand BioSlide&rsquo;s internal design for advanced customization &mdash; see the <a href="BioSlide-Manual.html#architecture">Architecture</a> section</p>
+  </div>
+</div>
+
+<h3>Workflow Checklist</h3>
+<ul class="checklist">
+  <li>Install BioSlide and verify it launches</li>
+  <li>Create a new .hssp project</li>
+  <li>Import at least one WSI slide</li>
+  <li>Navigate the slide with zoom and pan</li>
+  <li>Run automatic segmentation</li>
+  <li>Refine at least one slice with GrabCut</li>
+  <li>Take at least one distance measurement</li>
+  <li>Export segmented slices as PNG with feathered alpha</li>
+  <li>Build a 2&times;2 collage and export as PDF</li>
+  <li>Create a 3-keyframe camera animation and export as MP4</li>
+  <li>Load serial sections and render a 3D volume</li>
+  <li>Run a batch export of multiple slides</li>
+  <li>Use TBI export settings to switch profile and format, then verify output in Export Review Viewer</li>
+  <li>Complete the full tool deep-dive lesson checklist</li>
+</ul>
+</section>
+
+<footer>
+  <p>BioSlide v1.1.0 &mdash; Tutorial &mdash; &copy; 2024&ndash;2026 BioSlide Contributors &mdash; MIT License</p>
+  <p><a href="BioSlide-Manual.html">Open Reference Manual</a> &nbsp;|&nbsp; <a href="#top">Back to Top</a></p>
+</footer>
+
+</main>
+</div>
+
+<!-- ═══════════════════  NAV HIGHLIGHTING  ═══════════════════ -->
+<script>
+(function(){
+  const sections=document.querySelectorAll('.lesson[id]');
+  const navLinks=document.querySelectorAll('.nav-link[href^="#"]');
+  const observer=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        navLinks.forEach(function(l){l.classList.remove('active')});
+        const link=document.querySelector('.nav-link[href="#'+e.target.id+'"]');
+        if(link)link.classList.add('active');
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px'});
+  sections.forEach(function(s){observer.observe(s)});
+})();
+</script>
+</body>
+</html>

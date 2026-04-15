@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSlice Desktop - Tutorial</title>
+<style>
+:root{
+  --bg:#f5f8fc;--surface:#fff;--ink:#0f172a;--muted:#475569;--line:#dbe4ef;
+  --brand:#007ACC;--brand-strong:#005a9e;--brand-soft:#e0f2fe;
+  --ok:#0f766e;--warn:#92400e;--danger:#991b1b;
+  --shadow:0 8px 22px rgba(2,10,26,.08);
+  --sidebar-bg:linear-gradient(160deg,#0b1c2f 0%,#10233a 55%,#15324a 100%);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.65}
+a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
+
+.page{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--sidebar-bg);color:#d5e4f4;border-right:1px solid #26405e;padding:14px 12px 20px;font-size:.84rem}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(125,211,252,.25);border-radius:3px}
+.brand{margin-bottom:10px;border:1px solid rgba(148,184,224,.28);background:rgba(8,20,36,.55);border-radius:10px;padding:10px 12px}
+.brand h1{font-size:.96rem;margin:0 0 2px;color:#f1f7ff}
+.brand p{margin:0;font-size:.73rem;color:#9ec1e2}
+.nav-group{margin:10px 0 4px;color:#7fa2c2;font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700}
+.nav-link{display:block;margin-bottom:2px;padding:4px 8px;border-radius:6px;color:#d5e4f4;border:1px solid transparent;font-size:.8rem}
+.nav-link:hover{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.28);text-decoration:none}
+.nav-link.active{background:rgba(14,165,233,.2);border-color:rgba(56,189,248,.45);color:#fff}
+.sidebar-footer{margin-top:14px;padding:8px;border-radius:8px;border:1px solid rgba(125,211,252,.24);background:rgba(2,15,30,.55);font-size:.74rem;text-align:center}
+.sidebar-footer a{color:#7dd3fc}
+
+.main{padding:24px 28px;max-width:1100px}
+
+.hero{border-radius:14px;overflow:hidden;background:linear-gradient(125deg,#003d66 0%,#005a9e 48%,#007ACC 100%);color:#f5fbff;box-shadow:var(--shadow);margin-bottom:20px;padding:24px 28px}
+.hero h2{margin:0 0 6px;font-size:1.7rem;line-height:1.15}
+.hero p{margin:0 0 12px;font-size:.94rem;color:rgba(245,251,255,.88);max-width:72ch}
+.badges{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:.7rem;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.13)}
+
+.lesson{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:16px;position:relative}
+.lesson h2{margin:0 0 8px;color:var(--brand-strong);font-size:1.2rem;border-bottom:2px solid var(--brand-soft);padding-bottom:6px}
+.lesson h3{margin:12px 0 6px;color:var(--ink);font-size:.96rem}
+.lesson h4{margin:10px 0 4px;color:#1e3a5f;font-size:.88rem}
+.lesson p{margin:0 0 8px;color:#24364b}
+.lesson ul,.lesson ol{margin:0 0 8px;padding-left:20px;color:#24364b}
+.lesson li{margin-bottom:3px}
+.lesson>p:last-child,.lesson>ul:last-child,.lesson>div:last-child{margin-bottom:0}
+.lesson-badge{position:absolute;top:14px;right:16px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:.68rem;font-weight:600;border:1px solid}
+.lb-beginner{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
+.lb-intermediate{background:#fff7ed;color:#92400e;border-color:#fed7aa}
+.lb-advanced{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+
+.step{display:grid;grid-template-columns:38px 1fr;gap:10px;margin:12px 0;align-items:start}
+.step-num{width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;flex-shrink:0}
+.step-body{min-width:0}
+.step-body h4{margin:0 0 4px;font-size:.9rem;color:#0f172a}
+.step-body p{margin:0 0 4px;font-size:.85rem}
+
+.ref-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.84rem}
+.ref-table th,.ref-table td{border:1px solid var(--line);padding:7px 9px;text-align:left}
+.ref-table th{background:#edf6ff;color:#133a62;font-weight:600;white-space:nowrap}
+.ref-table tr:hover td{background:#f8fbff}
+.ref-table td code{font-size:.82em}
+
+code,.kbd{font-family:Consolas,"Cascadia Code","SFMono-Regular",Menlo,Monaco,monospace}
+code{background:#edf4fc;border:1px solid #d9e8f8;border-radius:5px;padding:1px 5px;font-size:.84em}
+.sc{display:inline-block;background:#1e293b;color:#e2e8f0;border-radius:4px;padding:1px 5px;font-size:.72rem;font-family:Consolas,monospace;vertical-align:middle}
+pre{margin:8px 0;padding:10px 12px;border-radius:8px;border:1px solid #1f3652;background:#0f1b2d;color:#dbeafe;overflow:auto;font-size:.82rem}
+
+.tip,.note,.warn,.danger{border-left:4px solid;border-radius:7px;padding:8px 10px;margin:10px 0;font-size:.85rem}
+.tip{background:#ecfdf5;border-color:#10b981}
+.note{background:#eff6ff;border-color:#3b82f6}
+.warn{background:#fff7ed;border-color:#f97316}
+.danger{background:#fef2f2;border-color:#ef4444}
+
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.card h4{margin:0 0 4px;color:var(--brand-strong);font-size:.88rem}
+.card p{margin:0;font-size:.82rem;color:var(--muted)}
+
+.checklist{list-style:none;padding:0;margin:10px 0}
+.checklist li{padding:6px 0 6px 28px;position:relative;font-size:.88rem;border-bottom:1px solid var(--line)}
+.checklist li:last-child{border-bottom:none}
+.checklist li::before{content:"";position:absolute;left:2px;top:8px;width:16px;height:16px;border-radius:4px;border:2px solid var(--brand);background:var(--brand-soft)}
+
+.outcome{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 12px;margin:10px 0}
+.outcome h4{margin:0 0 4px;color:#0369a1;font-size:.86rem}
+.outcome p,.outcome ul{font-size:.84rem;color:#0c4a6e}
+
+.status{display:inline-block;padding:1px 7px;border-radius:999px;font-size:.66rem;font-weight:600;vertical-align:middle}
+.status-ok{background:#d1fae5;color:#065f46}
+.status-limited{background:#fef3c7;color:#92400e}
+
+footer{text-align:center;color:#50657d;font-size:.82rem;padding:12px}
+
+.lesson{transition:transform .22s cubic-bezier(.25,.46,.45,.94),box-shadow .22s ease}
+.lesson:hover{transform:translateY(-3px);box-shadow:0 14px 36px rgba(0,60,120,.1)}
+.card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.card:hover{transform:translateY(-4px);box-shadow:0 12px 28px rgba(0,122,204,.12);border-color:var(--brand)}
+.tip,.note,.warn,.danger{transition:transform .15s ease,box-shadow .15s ease}
+.tip:hover,.note:hover,.warn:hover,.danger:hover{transform:translateX(4px);box-shadow:2px 2px 12px rgba(0,0,0,.06)}
+
+@media(max-width:1080px){.page{grid-template-columns:1fr}.sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid #26405e}}
+@media(max-width:780px){.main{padding:12px}.grid-2,.grid-3{grid-template-columns:1fr}.hero h2{font-size:1.4rem}}
+@media print{.sidebar{display:none}.page{grid-template-columns:1fr}.lesson{break-inside:avoid;box-shadow:none;border:1px solid #ccc}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<nav class="sidebar">
+<div class="brand">
+  <h1>DeepSlice Tutorial</h1>
+  <p>Desktop Workflow Guide</p>
+</div>
+
+<div class="nav-group">Foundations</div>
+<a class="nav-link" href="#prerequisites">Prerequisites</a>
+<a class="nav-link" href="#installation">Installation</a>
+<a class="nav-link" href="#first-launch">First Launch &amp; Health Check</a>
+<a class="nav-link" href="#ui-orientation">UI Orientation</a>
+
+<div class="nav-group">Core Workflow</div>
+<a class="nav-link" href="#lesson-ingestion">Ingestion</a>
+<a class="nav-link" href="#lesson-configuration">Configuration</a>
+<a class="nav-link" href="#lesson-prediction">Prediction</a>
+<a class="nav-link" href="#lesson-curation">Curation</a>
+<a class="nav-link" href="#lesson-export">Export</a>
+
+<div class="nav-group">Operations</div>
+<a class="nav-link" href="#lesson-session">Session &amp; QuickNII Roundtrip</a>
+<a class="nav-link" href="#lesson-errors">Diagnostics &amp; Auto-Fix</a>
+
+<div class="nav-group">Appendices</div>
+<a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+<a class="nav-link" href="#next-steps">Next Steps</a>
+
+<div class="sidebar-footer">
+  <a href="README.md">Open Project README &rarr;</a>
+</div>
+</nav>
+
+<main class="main">
+
+<header class="hero" id="top">
+  <h2>DeepSlice Desktop - Professional Tutorial</h2>
+  <p>This guide mirrors the app exactly and tells you what to click, where to click it, and when each action should be used. Follow it end-to-end to go from raw histology images to curated QuickNII-compatible outputs and reproducible reports.</p>
+  <div class="badges">
+    <span class="badge">11 Lessons</span>
+    <span class="badge">Beginner to Advanced</span>
+    <span class="badge">~45-60 min</span>
+  </div>
+</header>
+
+<section class="lesson" id="prerequisites" data-search="prerequisites requirements deep slice desktop python windows histology quicknii">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 0 - Prerequisites</h2>
+
+<ul class="checklist">
+  <li>Windows 10/11 (64-bit)</li>
+  <li>Python 3.10+ in a virtual environment</li>
+  <li>At least 8 GB RAM (16 GB+ recommended for larger datasets)</li>
+  <li>Histology images in <code>.jpg</code>, <code>.jpeg</code>, <code>.png</code>, <code>.tif</code>, or <code>.tiff</code></li>
+  <li>File naming with section IDs (recommended): <code>_s001</code>, <code>_s002</code>, ...</li>
+</ul>
+
+<div class="note"><strong>Important:</strong> The current desktop release supports <strong>coronal</strong> orientation in the main workflow. Sagittal and horizontal are listed as coming soon.</div>
+</section>
+
+<section class="lesson" id="installation" data-search="installation tensorflow pyside6 deep slice desktop setup">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 1 - Installation (Including TensorFlow Fix)</h2>
+
+<p>Set up a clean environment, install DeepSlice, and ensure TensorFlow is available so prediction can run.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Open PowerShell in the repository root</h4>
+    <pre>cd "D:\CLOUD\OneDrive - O365 Turun yliopisto\CODE\GITHUB\DeepSlice-LLV"</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Create and activate virtual environment</h4>
+    <pre>python -m venv .venv
+.venv\Scripts\activate</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Install the project</h4>
+    <pre>python -m pip install --upgrade pip
+python -m pip install -e .</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Install critical runtime dependencies</h4>
+    <pre>python -m pip install "tensorflow&lt;3.0" scikit-image</pre>
+    <p>This resolves the common startup errors <code>ModuleNotFoundError: tensorflow</code> and <code>ModuleNotFoundError: skimage</code>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Optional: verify import before opening the GUI</h4>
+    <pre>python -c "import tensorflow as tf; print(tf.__version__)"</pre>
+  </div>
+</div>
+
+<div class="warn"><strong>Windows GPU note:</strong> TensorFlow on native Windows generally runs CPU-only for newer versions. This is normal; DeepSlice still runs correctly on CPU.</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>The runtime environment is ready and prediction imports no longer fail due to missing TensorFlow.</p>
+</div>
+</section>
+
+<section class="lesson" id="first-launch" data-search="launch startup health check hardware button">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 2 - First Launch &amp; Health Check</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Launch the GUI</h4>
+    <pre>python DeepSlice/main.py</pre>
+    <p>Wait for the DeepSlice Desktop main window to appear.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Click <em>Hardware Health</em> in the top bar</h4>
+    <p>Use this immediately after launch to verify whether TensorFlow is in CPU or GPU mode and confirm the runtime is healthy.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Confirm error tooling is available</h4>
+    <p>Top bar should include <em>Open Error Log</em>, <em>Copy Last Error</em>, and <em>Try Auto-Fix Last Error</em>.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You confirmed the app launches and the runtime diagnostics controls are visible.</p>
+</div>
+</section>
+
+<section class="lesson" id="ui-orientation" data-search="ui orientation ingestion configuration prediction curation export">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 3 - UI Orientation</h2>
+
+<p>The application uses a left step navigator and a right content stack. Workflow order is strict and intentional.</p>
+
+<div class="grid-2">
+  <div class="card"><h4>Step Navigator</h4><p>Ingestion -> Configuration -> Prediction -> Curation -> Export. Locked steps unlock as data becomes available.</p></div>
+  <div class="card"><h4>Top Bar</h4><p>Hardware Health, Save Session, Load Session / QuickNII, Open Error Log, Copy Last Error, Try Auto-Fix Last Error.</p></div>
+  <div class="card"><h4>Status Prefixes</h4><p><code>✓</code> completed, <code>●</code> current, <code>◌</code> locked/pending.</p></div>
+  <div class="card"><h4>Runtime Console</h4><p>Available in Prediction. Use when running alignment or debugging processing tasks.</p></div>
+</div>
+
+<div class="tip"><strong>Workflow rule:</strong> If <em>Run Alignment</em> is disabled, check Configuration validation text and Ingestion warnings first; they explain exactly what is blocking execution.</div>
+</section>
+
+<section class="lesson" id="lesson-ingestion" data-search="ingestion add folder add files section numbers index table">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 4 - Ingestion</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Go to Ingestion (left navigator)</h4>
+    <p>If this is a new session, the app opens here by default.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Add images</h4>
+    <p>Click <em>Add Folder</em> for recursive folder import or <em>Add Files</em> for explicit selection. Use <em>Clear</em> to reset.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Configure pre-flight options</h4>
+    <p>Leave <em>Detect section numbers from filename (_sXXX)</em> on for indexed workflows. Enable <em>Legacy parser fallback</em> only if your naming does not use <code>_sXXX</code>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Review index and status table</h4>
+    <p>Check for parse errors, duplicates, and missing indices before leaving this step.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Thumbnail QA</h4>
+    <p>Click thumbnails to preview loaded files and visually confirm image orientation/quality before inference.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Dataset is loaded and pre-flight checks are clear enough to proceed.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-configuration" data-search="configuration species thickness direction ensemble secondary model">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 5 - Configuration</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Select species</h4>
+    <p>Click <em>Mouse (Allen CCFv3)</em> or <em>Rat (Waxholm Rat Atlas)</em> in <strong>Species / Atlas</strong>. This controls model and atlas configuration.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Set physical geometry</h4>
+    <p>Use <em>Auto-estimate thickness</em> for first pass. Click <em>Suggest Thickness</em> when predictions exist and you need a guided value. Use <em>Direction Override</em> only to intentionally override detected direction.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Choose prediction mode</h4>
+    <p>Enable <em>Ensemble prediction</em> for robust production runs. Use <em>Use secondary model only</em> for comparison diagnostics, not for normal baseline processing.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Read validation banner</h4>
+    <p>The <em>Validation:</em> message in Configuration tells you if execution is ready or what exactly still blocks <em>Run Alignment</em>.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Configuration is explicitly validated and ready for prediction.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-prediction" data-search="prediction run alignment progress console phase">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 6 - Prediction</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Click <em>Run Alignment</em></h4>
+    <p>Do this only after Configuration shows ready state. This starts model loading/inference in a background worker.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Monitor runtime phase and progress</h4>
+    <p>Use <em>Phase</em>, <em>Progress</em>, and progress bar to track primary/secondary passes and data loading.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Open runtime console when needed</h4>
+    <p>Click <em>Show Runtime Console</em> to see detailed logs and troubleshooting context during processing.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Accept predicted thickness when available</h4>
+    <p>After completion, click <em>Use Predicted Thickness</em> if you want the estimated value copied into Configuration.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Preview per-slice alignment vectors</h4>
+    <p>Use the slice selector to inspect O/U/V overlays and confirm inference output quality before curation.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Predictions are generated, indexed direction is detected, and the curation workflow is unlocked.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-curation" data-search="curation outliers normalize angles enforce spacing atlas preview">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 7 - Curation</h2>
+
+<p>Use this stage to improve geometric consistency and exclude unreliable sections before export.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Flag problematic slices</h4>
+    <p>In the left slice list, check suspicious rows and click <em>Apply Bad Section Flags</em>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Detect outliers automatically (recommended baseline)</h4>
+    <p>Click <em>Detect Outliers</em> to auto-mark low-consistency sections.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Apply geometric refinements in this order</h4>
+    <ol>
+      <li><em>Normalize Angles</em></li>
+      <li><em>Enforce Index Order</em></li>
+      <li><em>Enforce Index Spacing</em></li>
+    </ol>
+    <p>Use this sequence when section numbering is trustworthy and you want stable serial geometry.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Manual angle override only when justified</h4>
+    <p>Set ML/DV in spin boxes and click <em>Apply Manual Angles</em> only when you have explicit domain reason to override the inferred mean.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Use atlas preview for depth sanity checks</h4>
+    <p>Enable <em>Atlas volume preview</em>, select volume, optionally enable <em>Blend atlas on histology</em>, then adjust blend slider to compare alignment context.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h4>Use Undo/Redo aggressively during curation</h4>
+    <p>Every curation action snapshots state. If a transform degrades quality, click <em>Undo</em> immediately.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You have a curated, internally consistent dataset ready for publication/export pipelines.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-export" data-search="export predictions json xml report pdf quicknii">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Lesson 8 - Export</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Set output destination</h4>
+    <p>In <strong>Export Configuration</strong>, click <em>Browse</em> and choose Output Directory, then set Base Filename.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Select primary export format</h4>
+    <table class="ref-table">
+      <thead><tr><th>Option</th><th>When to use</th></tr></thead>
+      <tbody>
+      <tr><td><strong>JSON (QuickNII/VisuAlign)</strong></td><td>Default for modern workflows and marker preservation.</td></tr>
+      <tr><td><strong>Legacy XML</strong></td><td>Use only for older downstream tooling.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Click <em>Export Predictions</em></h4>
+    <p>This writes your selected JSON/XML plus an automatic CSV sidecar in the same location.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Generate PDF report</h4>
+    <p>Click <em>Generate Report (PDF)</em> after final curation for a shareable, reproducible summary artifact.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Open directly in QuickNII</h4>
+    <p>Set QuickNII path once in this panel, then click <em>Open in QuickNII</em> after a JSON export.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You exported reproducible outputs for both computational and visual QC workflows.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-session" data-search="save session load session quicknii json xml markers">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 9 - Session &amp; QuickNII Roundtrip</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Save state during long work</h4>
+    <p>Click <em>Save Session</em> in the top bar. This stores GUI state and makes long curation work resumable.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Load previous sessions</h4>
+    <p>Click <em>Load Session / QuickNII</em> and select <code>.deepslice-session.json</code> to continue exactly where you left off.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Load QuickNII JSON/XML for re-curation</h4>
+    <p>Use the same button to load existing QuickNII files. Species and markers are preserved when available.</p>
+  </div>
+</div>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>You can pause/resume curation and roundtrip external QuickNII outputs without losing context.</p>
+</div>
+</section>
+
+<section class="lesson" id="lesson-errors" data-search="error log copy last error auto fix diagnostics">
+<span class="lesson-badge lb-intermediate">Intermediate</span>
+<h2>Lesson 10 - Diagnostics, Error Reports, and Auto-Fix</h2>
+
+<p>This app includes structured logging and guided remediation for common runtime issues.</p>
+
+<div class="grid-2">
+  <div class="card"><h4>Open Error Log</h4><p>Opens persistent log file for full traceback and runtime details.</p></div>
+  <div class="card"><h4>Copy Last Error</h4><p>Copies a complete report payload with context, traceback, and analysis.</p></div>
+  <div class="card"><h4>Try Auto-Fix Last Error</h4><p>Runs safe automated fixes (for known patterns like missing dependencies).</p></div>
+  <div class="card"><h4>Error Dialog Buttons</h4><p>Use <em>Copy Error Report</em> to share diagnostics; use <em>Try Auto-Fix</em> when available.</p></div>
+</div>
+
+<h3>Recommended response sequence</h3>
+<ol>
+  <li>Read the dialog context and analysis summary.</li>
+  <li>Click <em>Try Auto-Fix</em> if offered.</li>
+  <li>If still failing, click <em>Copy Error Report</em> and share that payload.</li>
+  <li>Open log file to inspect full traceback chronology.</li>
+</ol>
+
+<div class="outcome">
+  <h4>&#10003; Outcome</h4>
+  <p>Errors become actionable quickly, with machine-readable details suitable for AI-assisted repair.</p>
+</div>
+</section>
+
+<section class="lesson" id="troubleshooting" data-search="troubleshooting tensorflow pyside6 quicknii orientation">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Troubleshooting</h2>
+
+<table class="ref-table">
+<thead><tr><th>Problem</th><th>Resolution</th></tr></thead>
+<tbody>
+<tr><td><code>ModuleNotFoundError: No module named 'tensorflow'</code></td><td>Activate project venv and run <code>python -m pip install "tensorflow&lt;3.0"</code>.</td></tr>
+<tr><td><code>ModuleNotFoundError: No module named 'skimage'</code></td><td>Run <code>python -m pip install scikit-image</code> in the same activated project venv.</td></tr>
+<tr><td>Run Alignment disabled</td><td>Read <em>Validation:</em> text in Configuration and Ingestion warnings (common causes: duplicate/missing section numbers, non-coronal selection, too few slices).</td></tr>
+<tr><td>No section numbers detected</td><td>Rename files to include <code>_sXXX</code> pattern or enable legacy parser fallback.</td></tr>
+<tr><td>Hardware Health shows CPU only</td><td>Expected on many native Windows TensorFlow setups. CPU mode is supported.</td></tr>
+<tr><td>QuickNII launch fails</td><td>Set valid QuickNII executable path in Export panel and ensure JSON export exists.</td></tr>
+<tr><td>Atlas preview unavailable</td><td>Check runtime log for atlas download/import issues and verify network/path permissions for metadata assets.</td></tr>
+<tr><td>Prediction failed dialog appears</td><td>Use <em>Copy Error Report</em> and share the full payload; run <em>Try Auto-Fix</em> if available.</td></tr>
+</tbody>
+</table>
+
+<div class="danger"><strong>Do not ignore repeated prediction errors.</strong> If the same traceback repeats, capture one complete report and resolve root cause before re-running multiple times.</div>
+</section>
+
+<section class="lesson" id="next-steps" data-search="next steps checklist deep slice workflow">
+<span class="lesson-badge lb-beginner">Beginner</span>
+<h2>Next Steps</h2>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>Production Template</h4>
+    <p>Create a standard profile: species, section-number policy, and export defaults for your lab.</p>
+  </div>
+  <div class="card">
+    <h4>QC Discipline</h4>
+    <p>Adopt fixed curation sequence: Outliers -> Normalize Angles -> Enforce Order -> Enforce Spacing.</p>
+  </div>
+  <div class="card">
+    <h4>Traceability</h4>
+    <p>Always save session snapshots before major curation operations and before final export.</p>
+  </div>
+</div>
+
+<h3>Operational Completion Checklist</h3>
+<ul class="checklist">
+  <li>App launches and Hardware Health executes successfully</li>
+  <li>Dataset ingested with clean index parsing</li>
+  <li>Configuration validated and Run Alignment completes</li>
+  <li>Curation applied with at least one quality-control pass</li>
+  <li>JSON export + CSV sidecar generated</li>
+  <li>PDF report generated for documentation</li>
+  <li>Session saved for reproducibility</li>
+  <li>Error workflow tested: Copy Last Error and Open Error Log</li>
+</ul>
+</section>
+
+<footer>
+  <p>DeepSlice Desktop - Tutorial - Professional Workflow Guide</p>
+  <p><a href="#top">Back to Top</a></p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function(){
+  const sections=document.querySelectorAll('.lesson[id]');
+  const navLinks=document.querySelectorAll('.nav-link[href^="#"]');
+  const observer=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        navLinks.forEach(function(l){l.classList.remove('active')});
+        const link=document.querySelector('.nav-link[href="#'+e.target.id+'"]');
+        if(link)link.classList.add('active');
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px'});
+  sections.forEach(function(s){observer.observe(s)});
+})();
+</script>
+</body>
+</html>
