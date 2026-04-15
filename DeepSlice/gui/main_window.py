@@ -307,8 +307,6 @@ class DeepSliceMainWindow(QMainWindow):
         self.step_list.setFixedWidth(230)
         for step in self.STEP_LABELS:
             self.step_list.addItem(QListWidgetItem(step))
-        self.step_list.currentRowChanged.connect(self._on_step_changed)
-        self.step_list.setCurrentRow(0)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_ingestion_page())
@@ -316,6 +314,10 @@ class DeepSliceMainWindow(QMainWindow):
         self.stack.addWidget(self._build_prediction_page())
         self.stack.addWidget(self._build_curation_page())
         self.stack.addWidget(self._build_export_page())
+
+        # Connect navigation after stack exists because setCurrentRow emits currentRowChanged.
+        self.step_list.currentRowChanged.connect(self._on_step_changed)
+        self.step_list.setCurrentRow(0)
 
         body_split.addWidget(self.step_list)
         body_split.addWidget(self.stack)
