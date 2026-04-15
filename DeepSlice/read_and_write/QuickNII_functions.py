@@ -126,7 +126,7 @@ def write_QUINT_JSON(
     if "markers" in df.columns:
         markers = df.markers.values
     else:
-        markers = [[]] * len(df)
+        markers = [[] for _ in range(len(df))]
 
     def serialize_markers(marker_value):
         if marker_value is None:

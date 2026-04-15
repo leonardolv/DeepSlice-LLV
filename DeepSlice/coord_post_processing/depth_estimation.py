@@ -21,6 +21,11 @@ def calculate_brain_center_depth(section, species="mouse"):
         raise ValueError("species must be one of 'mouse' or 'rat'")
 
     cross, k = plane_alignment.find_plane_equation(section)
+    if np.isclose(cross[1], 0.0):
+        raise ValueError(
+            "Cannot estimate brain center depth for a plane parallel to the Y axis"
+        )
+
     atlas_x, _, atlas_z = ATLAS_DIMS[species]
     translated_volume = np.array((atlas_x, 0, atlas_z))
     linear_point = (

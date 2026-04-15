@@ -1,8 +1,22 @@
-from statistics import mean
 import numpy as np
-from scipy.stats import norm
 
 import math
+
+
+def _validate_cross_components(cross, component_indexes, context):
+    for component_index in component_indexes:
+        if np.isclose(cross[component_index], 0.0):
+            raise ValueError(
+                f"Cannot compute {context}: plane normal component cross[{component_index}] is zero"
+            )
+
+
+def _safe_plane_division(linear_point, cross_value, component_name, context):
+    if np.isclose(cross_value, 0.0):
+        raise ValueError(
+            f"Cannot compute {context}: plane normal component {component_name} is zero"
+        )
+    return -(linear_point / cross_value)
 
 
 def find_plane_equation(plane):
@@ -29,6 +43,7 @@ def get_angle(inp, cross, k, direction):
     # cross and k is the normal vector of the plane
     # Direction defines whether we want the mediolateral or dorsaventral angle
     section = inp.copy()
+    _validate_cross_components(cross, (1,), "angle")
     # transform vector into absolute coordinates
     for i in range(3):
         section[i + 3] += section[i]
@@ -40,14 +55,14 @@ def get_angle(inp, cross, k, direction):
         # to do this we use the plane equation which tells us the position of every point on the plane
         linear_point = (((section[0] - 100) * cross[0]) + ((section[2]) * cross[2])) + k
         # this tells us the depth of that point which differs in x dimension but lies on the same plane
-        depth = -(linear_point / cross[1])
+        depth = _safe_plane_division(linear_point, cross[1], "cross[1]", "ML angle")
         b = np.array((section[0] - 100, depth))
         c = b + [100, 0]
 
     if direction == "DV":
         a = section[1:3]
         linear_point = (((section[0]) * cross[0]) + ((section[2] - 100) * cross[2])) + k
-        depth = -(linear_point / cross[1])
+        depth = _safe_plane_division(linear_point, cross[1], "cross[1]", "DV angle")
         b = np.array((depth, section[2] - 100))
         c = b + [0, 100]
     ba = a - b
@@ -124,6 +139,7 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
     """
     # find the plane equation for a set of QuickNII coordinates
     cross, k = find_plane_equation(m)
+    _validate_cross_components(cross, (0, 1, 2), "axis")
     if atlas == "AMBA":
         volume = np.array((528, 320, 456))
         posx, posy, posz = volume / 2
@@ -138,27 +154,27 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
         (((translated_volume[0] / 2)) * cross[0])
         + ((translated_volume[2] / 2) * cross[2])
     ) + k
-    cor_Y = -(cor_linear_point / cross[1])
+    cor_Y = _safe_plane_division(cor_linear_point, cross[1], "cross[1]", "coronal axis")
     #     cor_axis = ((translated_volume[0] / 2, depth, translated_volume[2] / 2))
 
     sag_linear_point = (
         ((translated_volume[1] / 2) * cross[1])
         + ((translated_volume[2] / 2) * cross[2])
     ) + k
-    sag_X = -(sag_linear_point / cross[0])
+    sag_X = _safe_plane_division(sag_linear_point, cross[0], "cross[0]", "sagittal axis")
     #     sag_axis = ((translated_volume[1] / 2, depth, translated_volume[2] / 2))
 
     horz_linear_point = (
         ((translated_volume[0] / 2) * cross[0])
         + ((translated_volume[1] / 2) * cross[1])
     ) + k
-    horz_Z = -(horz_linear_point / cross[2])
+    horz_Z = _safe_plane_division(
+        horz_linear_point, cross[2], "cross[2]", "horizontal axis"
+    )
     if plane_of_section is None:
         plane_of_section = np.argmin(
             np.abs((cor_Y - posy, sag_X - posx, horz_Z - posz))
         )
-    choices = {"x": sag_X, " y": cor_Y, " z": horz_Z}
-
     if plane_of_section == 0:
         axis = (translated_volume[0] / 2, cor_Y, translated_volume[2] / 2)
         if direction == "DV":
@@ -166,7 +182,9 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
                 ((translated_volume[0]) * cross[0])
                 + ((translated_volume[2] / 2) * cross[2])
             ) + k
-            Ypred = -(linear_point / cross[1])
+            Ypred = _safe_plane_division(
+                linear_point, cross[1], "cross[1]", "DV axis point"
+            )
             ##the way QNII rotates is but i prefer my way
             #             axis2 = ((translated_volume[0], cor_Y, translated_volume[2] / 2))
             axis2 = (translated_volume[0], Ypred, translated_volume[2] / 2)
@@ -177,7 +195,9 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
                 ((translated_volume[0] / 2) * cross[0])
                 + ((translated_volume[2]) * cross[2])
             ) + k
-            Ypred = -(linear_point / cross[1])
+            Ypred = _safe_plane_division(
+                linear_point, cross[1], "cross[1]", "ML axis point"
+            )
             axis2 = (translated_volume[0] / 2, Ypred, translated_volume[2])
 
     if plane_of_section == 1:
@@ -187,14 +207,18 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
                 ((translated_volume[1]) * cross[1])
                 + ((translated_volume[2] / 2) * cross[2])
             ) + k
-            Xpred = -(linear_point / cross[0])
+            Xpred = _safe_plane_division(
+                linear_point, cross[0], "cross[0]", "DV axis point"
+            )
             axis2 = (Xpred, translated_volume[1], translated_volume[2] / 2)
         if direction == "ML":
             linear_point = (
                 ((translated_volume[1] / 2) * cross[1])
                 + ((translated_volume[2]) * cross[2])
             ) + k
-            Xpred = -(linear_point / cross[0])
+            Xpred = _safe_plane_division(
+                linear_point, cross[0], "cross[0]", "ML axis point"
+            )
             axis2 = (Xpred, translated_volume[1] / 2, translated_volume[2])
 
     if plane_of_section == 2:
@@ -204,7 +228,9 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
                 ((translated_volume[0]) * cross[0])
                 + ((translated_volume[1] / 2) * cross[1])
             ) + k
-            Zpred = -(linear_point / cross[2])
+            Zpred = _safe_plane_division(
+                linear_point, cross[2], "cross[2]", "DV axis point"
+            )
             axis2 = (translated_volume[0], translated_volume[1] / 2, Zpred)
 
         if direction == "ML":
@@ -212,7 +238,9 @@ def get_axis(m, translation_vector, direction, plane_of_section=None, atlas="AMB
                 ((translated_volume[0] / 2) * cross[0])
                 + ((translated_volume[1]) * cross[1])
             ) + k
-            Zpred = -(linear_point / cross[2])
+            Zpred = _safe_plane_division(
+                linear_point, cross[2], "cross[2]", "ML axis point"
+            )
             axis2 = (translated_volume[0] / 2, translated_volume[1], Zpred)
     axis_vector = np.array(axis) - np.array(axis2)
     return axis_vector
@@ -234,6 +262,7 @@ def rotate_section(section, degrees, direction, plane_of_section=None, atlas="AM
     """
 
     cross, k = find_plane_equation(section)
+    _validate_cross_components(cross, (0, 1, 2), "rotation")
 
     # this looks redundant
     # if direction==ML:
@@ -255,21 +284,27 @@ def rotate_section(section, degrees, direction, plane_of_section=None, atlas="AM
         (((translated_volume[0] / 2)) * cross[0])
         + ((translated_volume[2] / 2) * cross[2])
     ) + k
-    cor_Y = -(cor_linear_point / cross[1])
+    cor_Y = _safe_plane_division(
+        cor_linear_point, cross[1], "cross[1]", "coronal rotation"
+    )
     #     cor_axis = ((translated_volume[0] / 2, depth, translated_volume[2] / 2))
 
     sag_linear_point = (
         ((translated_volume[1] / 2) * cross[1])
         + ((translated_volume[2] / 2) * cross[2])
     ) + k
-    sag_X = -(sag_linear_point / cross[0])
+    sag_X = _safe_plane_division(
+        sag_linear_point, cross[0], "cross[0]", "sagittal rotation"
+    )
     #     sag_axis = ((translated_volume[1] / 2, depth, translated_volume[2] / 2))
 
     horz_linear_point = (
         ((translated_volume[0] / 2) * cross[0])
         + ((translated_volume[1] / 2) * cross[1])
     ) + k
-    horz_Z = -(horz_linear_point / cross[2])
+    horz_Z = _safe_plane_division(
+        horz_linear_point, cross[2], "cross[2]", "horizontal rotation"
+    )
     if plane_of_section is None:
         plane_of_section = np.argmin(
             np.abs((cor_Y - posy, sag_X - posx, horz_Z - posz))

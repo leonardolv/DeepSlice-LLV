@@ -68,6 +68,16 @@ class DSModel:
             return
         logger(message)
 
+    def _ensure_predictions_available(self, action_name: str):
+        if not hasattr(self, "predictions") or self.predictions is None:
+            raise RuntimeError(
+                f"No predictions available. Run predict() or load_QUINT() before calling {action_name}."
+            )
+        if len(self.predictions) == 0:
+            raise RuntimeError(
+                f"Predictions table is empty. Cannot run {action_name} on an empty dataset."
+            )
+
     def predict(
         self,
         image_directory: str = None,
@@ -76,6 +86,7 @@ class DSModel:
         legacy_section_numbers=False,
         image_list=None,
         use_secondary_model=False,
+        batch_size: int = 16,
         progress_callback=None,
         log_callback=None,
     ):
@@ -89,7 +100,12 @@ class DSModel:
         :type section_numbers: bool, optional
         :param legacy_section_numbers: a legacy setting which parses section numbers how old DeepSlice used to, defaults to False
         :type legacy_section_numbers: bool, optional
+        :param batch_size: batch size used for model inference, defaults to 16
+        :type batch_size: int, optional
         """
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be a positive integer")
 
         # We set this to false as predict is the entry point for a new brain and therefore we need to reset all values which may persist from a previous animal.
         self.bad_sections_present = False
@@ -99,7 +115,8 @@ class DSModel:
             ensemble = self._parse_bool(ensemble)
         if image_list:
             image_generator, width, height = neural_network.load_images_from_list(
-                image_list
+                image_list,
+                batch_size=batch_size,
             )
             if image_directory:
                 self._log(
@@ -108,7 +125,8 @@ class DSModel:
                 )
         else:
             image_generator, width, height = neural_network.load_images_from_path(
-                image_directory
+                image_directory,
+                batch_size=batch_size,
             )
         primary_weights = metadata_loader.get_data_path(
             self.config["weight_file_paths"][self.species]["primary"],
@@ -122,8 +140,8 @@ class DSModel:
                 "secondary"
             ]
             secondary_path = str(secondary_config.get("path", "")).strip().lower()
-            if secondary_path == "none":
-                secondary_weights = "None"
+            if secondary_path in {"", "none"}:
+                secondary_weights = None
             else:
                 secondary_weights = metadata_loader.get_data_path(
                     secondary_config,
@@ -131,7 +149,7 @@ class DSModel:
                     download_callback=self.download_callback,
                 )
 
-        if secondary_weights == "None":
+        if (ensemble or use_secondary_model) and secondary_weights is None:
             self._log(f"ensemble is not available for {self.species}", callback=log_callback)
             if use_secondary_model:
                 self._log(
@@ -193,6 +211,7 @@ class DSModel:
         :param bad_sections: A list of bad sections to ignore when calculating angles and spacing, the list just needs to contain a unique string for each section, for instance the section number. do not use a string which appears in multiple filenames
         :type bad_sections: list
         """
+        self._ensure_predictions_available("set_bad_sections()")
         self.predictions = spacing_and_indexing.set_bad_sections_util(
             self.predictions, bad_sections, auto, species=self.species
         )
@@ -201,6 +220,7 @@ class DSModel:
         """
         reorders the section depths (oy) in the predictions such that they align with the section indexes
         """
+        self._ensure_predictions_available("enforce_index_order()")
         self.predictions = spacing_and_indexing.enforce_section_ordering(
             self.predictions, species=self.species
         )
@@ -216,6 +236,7 @@ class DSModel:
         :param section_thickness: the thickness of the sections in microns, defaults to None
         :type section_thickness: Union[int, float], optional
         """
+        self._ensure_predictions_available("enforce_index_spacing()")
         voxel_size = self.config["target_volumes"][self.species]["voxel_size_microns"]
         self.predictions = spacing_and_indexing.space_according_to_index(
             self.predictions,
@@ -234,12 +255,20 @@ class DSModel:
         :type ML: [int, float]
         :type DV: [int, float]
         """
+        self._ensure_predictions_available("adjust_angles()")
+        if not np.isfinite(ML) or not np.isfinite(DV):
+            raise ValueError("ML and DV angles must be finite numbers")
+        if not -90 <= ML <= 90:
+            raise ValueError("ML angle must be within [-90, 90] degrees")
+        if not -90 <= DV <= 90:
+            raise ValueError("DV angle must be within [-90, 90] degrees")
         self.predictions = angle_methods.set_angles(self.predictions, DV, ML)
 
     def propagate_angles(self, method="weighted_mean"):
         """
         Calculates the average Mediolateral and Dorsoventral angles for all sections.
         """
+        self._ensure_predictions_available("propagate_angles()")
         coordinate_columns = ["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz"]
         max_iterations = 6
         tolerance = 1e-3
@@ -304,6 +333,7 @@ class DSModel:
         :param output_format: one of "json" or "xml", defaults to "json"
         :type output_format: str
         """
+        self._ensure_predictions_available("save_predictions()")
         target = self.config["target_volumes"][self.species]["name"]
         aligner = self.config["DeepSlice_version"]["prerelease"]
         self.predictions.to_csv(filename + ".csv", index=False)

@@ -122,7 +122,10 @@ def load_xception_weights(model, weights, species="mouse"):
     return model
 
 
-def _create_image_generator(images: list) -> np.ndarray:
+def _create_image_generator(images: list, batch_size: int = 16) -> np.ndarray:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be a positive integer")
+
     images = [i for i in images if os.path.splitext(i)[1].lower() in VALID_IMAGE_FORMATS]
     sizes = [get_image_size(i) for i in images]
     width = [i[0] for i in sizes]
@@ -145,7 +148,7 @@ def _create_image_generator(images: list) -> np.ndarray:
             x_col="Filenames",
             y_col=None,
             target_size=(299, 299),
-            batch_size=1,
+            batch_size=batch_size,
             colormode="rgb",
             shuffle=False,
             class_mode=None,
@@ -153,7 +156,7 @@ def _create_image_generator(images: list) -> np.ndarray:
     return image_generator, width, height
 
 
-def load_images_from_path(image_path: str) -> np.ndarray:
+def load_images_from_path(image_path: str, batch_size: int = 16) -> np.ndarray:
     """
     Load the images from the given path
     :param image_path: The path to the images
@@ -164,10 +167,10 @@ def load_images_from_path(image_path: str) -> np.ndarray:
     if image_path is None or not os.path.isdir(image_path):
         raise ValueError("The path provided is not a directory")
     images = glob(os.path.join(image_path, "*"))
-    return _create_image_generator(images)
+    return _create_image_generator(images, batch_size=batch_size)
 
 
-def load_images_from_list(image_list: list) -> np.ndarray:
+def load_images_from_list(image_list: list, batch_size: int = 16) -> np.ndarray:
     """
     Load the images from the given list
     :param image_list: The list of images
@@ -177,7 +180,7 @@ def load_images_from_list(image_list: list) -> np.ndarray:
     """
     if image_list is None:
         raise ValueError("image_list must not be None")
-    return _create_image_generator(image_list)
+    return _create_image_generator(image_list, batch_size=batch_size)
 
 
 def predictions_util(
@@ -214,14 +217,27 @@ def predictions_util(
     if log_callback is not None:
         log_callback("Running primary inference pass")
 
-    predictions = model.predict(
-        image_generator,
-        steps=steps,
-        verbose=1,
-        callbacks=callbacks,
-    )
+    try:
+        predictions = model.predict(
+            image_generator,
+            steps=steps,
+            verbose=1,
+            callbacks=callbacks,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Primary inference failed. Check image integrity, TensorFlow runtime, and available memory."
+        ) from exc
+
     predictions = predictions.astype(np.float64)
+    if not np.isfinite(predictions).all():
+        raise RuntimeError("Primary inference produced non-finite values (NaN/Inf)")
+
     if ensemble:
+        if secondary_weights is None:
+            raise ValueError(
+                "secondary_weights is required when ensemble=True"
+            )
         image_generator.reset()
         model = load_xception_weights(model, secondary_weights, species)
         callbacks = None
@@ -236,13 +252,28 @@ def predictions_util(
         if log_callback is not None:
             log_callback("Running ensemble secondary inference pass")
 
-        secondary_predictions = model.predict(
-            image_generator,
-            steps=steps,
-            verbose=1,
-            callbacks=callbacks,
-        )
+        try:
+            secondary_predictions = model.predict(
+                image_generator,
+                steps=steps,
+                verbose=1,
+                callbacks=callbacks,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Secondary inference failed during ensemble pass. Check model weights and runtime memory."
+            ) from exc
+
+        secondary_predictions = secondary_predictions.astype(np.float64)
+        if not np.isfinite(secondary_predictions).all():
+            raise RuntimeError(
+                "Secondary inference produced non-finite values (NaN/Inf)"
+            )
         predictions = np.mean([predictions, secondary_predictions], axis=0)
+
+    if not np.isfinite(predictions).all():
+        raise RuntimeError("Inference produced non-finite coordinates (NaN/Inf)")
+
     filenames = image_generator.filenames
     filenames = [os.path.basename(i) for i in filenames]
     predictions_df = pd.DataFrame(

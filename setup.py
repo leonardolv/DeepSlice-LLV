@@ -45,7 +45,7 @@ setup(
         "pandas>=1.5",
         "scikit-image>=0.22",
         "scipy>=1.10",
-        "tensorflow>=2.13",
+        "tensorflow>=2.13,<3.0",
         "h5py>=3.9",
         "requests>=2.31",
         "protobuf>=4.21",
