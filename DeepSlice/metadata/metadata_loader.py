@@ -62,7 +62,7 @@ def download_file(
                             continue
                         output_file.write(chunk)
                         downloaded_bytes += len(chunk)
-                        if progress_callback is not None:
+                        if progress_callback is not None and total_bytes > 0:
                             progress_callback(downloaded_bytes, total_bytes)
 
             if expected_sha256:

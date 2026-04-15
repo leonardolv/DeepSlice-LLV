@@ -20,6 +20,7 @@ from .coord_post_processing import spacing_and_indexing, angle_methods
 from .read_and_write import QuickNII_functions
 from .neural_network import neural_network
 from .metadata import metadata_loader
+from .diagnostics import log_issue
 
 
 class DSModel:
@@ -287,6 +288,25 @@ class DSModel:
                 updated_coordinates, previous_coordinates, atol=tolerance, rtol=0
             ):
                 break
+        else:
+            log_issue(
+                "DS-008",
+                "WARNING",
+                "propagate_angles() did not converge within max_iterations",
+                context={
+                    "species": self.species,
+                    "max_iterations": max_iterations,
+                    "tolerance": tolerance,
+                },
+                location={
+                    "file": "DeepSlice/main.py",
+                    "function": "DSModel.propagate_angles",
+                    "line": None,
+                },
+            )
+            self._log(
+                "WARNING: propagate_angles() did not converge; using best available estimate"
+            )
 
     def load_QUINT(self, filename):
         """
@@ -300,10 +320,10 @@ class DSModel:
             predictions, target = QuickNII_functions.read_QUINT_JSON(filename)
             if target == "ABA_Mouse_CCFv3_2017_25um.cutlas" and self.species != "mouse":
                 self.species = "mouse"
-                print("Switching to a mouse model")
+                self._log("Switching to a mouse model")
             elif target == "WHS_Rat_v4_39um.cutlas" and self.species != "rat":
                 self.species = "rat"
-                print("switching to a rat model")
+                self._log("Switching to a rat model")
         elif filename.lower().endswith(".xml"):
             predictions = QuickNII_functions.read_QuickNII_XML(filename)
         else:

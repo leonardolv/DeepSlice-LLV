@@ -2,6 +2,7 @@ from typing import Union, List, Optional
 import numpy as np
 import pandas as pd
 import re
+from pathlib import Path
 from .depth_estimation import calculate_brain_center_depths
 from .plane_alignment_functions import plane_alignment
 
@@ -218,7 +219,7 @@ def space_according_to_index(
         predictions = enforce_section_ordering(predictions, species=species)
         depths = calculate_brain_center_depths(predictions, species=species)
         depths = np.array(depths)
-        if not section_thickness:
+        if section_thickness is None:
             section_thickness = calculate_average_section_thickness(
                 predictions["nr"],
                 section_depth=depths,
@@ -248,7 +249,7 @@ def number_sections(filenames: List[str], legacy=False) -> List[int]:
     :return: list of section numbers
     :rtype: list[int]
     """
-    filenames = [filename.split("\\")[-1] for filename in filenames]
+    filenames = [Path(filename).name for filename in filenames]
     section_numbers = []
     for filename in filenames:
         if not legacy:
@@ -286,6 +287,8 @@ def set_bad_sections_util(
     if bad_sections is None:
         bad_sections = []
 
+    df["bad_section"] = False
+
     bad_section_indexes = [
         df.Filenames.str.contains(bad_section) for bad_section in bad_sections
     ]
@@ -299,7 +302,6 @@ def set_bad_sections_util(
     else:
         bad_section_indexes = np.array([], dtype=int)
 
-    df.loc[~df.index.isin(bad_section_indexes), "bad_section"] = False
     if auto:
         df["depths"] = calculate_brain_center_depths(df, species=species)
         x = df["nr"].values

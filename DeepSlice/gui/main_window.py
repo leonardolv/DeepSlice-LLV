@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import traceback
 from datetime import datetime
 from typing import List, Optional
 
@@ -47,6 +48,14 @@ from PySide6.QtWidgets import (
 )
 from PIL import Image
 
+from ..error_auto_fix import ErrorAutoFixer
+from ..error_logging import (
+    build_error_report,
+    configure_error_logging,
+    get_logger,
+    log_error_text,
+    read_error_log_tail,
+)
 from . import reporting
 from .state import DeepSliceAppState, SUPPORTED_IMAGE_FORMATS
 from .workers import FunctionWorker
@@ -258,6 +267,14 @@ class DeepSliceMainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.error_log_path = configure_error_logging()
+        self._logger = get_logger("gui.main_window")
+        self._error_autofixer = ErrorAutoFixer()
+        self._last_error_report = ""
+        self._last_error_context = ""
+        self._last_error_text = ""
+        self._last_error_analysis = None
+
         self.state = DeepSliceAppState()
         self.thread_pool = QThreadPool.globalInstance()
         self.active_workers = []
@@ -274,6 +291,7 @@ class DeepSliceMainWindow(QMainWindow):
         self._apply_theme()
         self._update_hardware_mode_label()
         self._refresh_all_views()
+        self._logger.info("DeepSlice GUI initialized. Error log: %s", self.error_log_path)
 
     def _track_worker(self, worker: FunctionWorker):
         self.active_workers.append(worker)
@@ -351,6 +369,17 @@ class DeepSliceMainWindow(QMainWindow):
         self.load_session_button = QPushButton("Load Session / QuickNII")
         self.load_session_button.clicked.connect(self._load_session_or_quint)
 
+        self.open_log_button = QPushButton("Open Error Log")
+        self.open_log_button.clicked.connect(self._open_error_log)
+
+        self.copy_error_button = QPushButton("Copy Last Error")
+        self.copy_error_button.clicked.connect(self._copy_last_error_report)
+        self.copy_error_button.setEnabled(False)
+
+        self.auto_fix_button = QPushButton("Try Auto-Fix Last Error")
+        self.auto_fix_button.clicked.connect(self._try_auto_fix_last_error)
+        self.auto_fix_button.setEnabled(False)
+
         layout.addWidget(self.project_label)
         layout.addWidget(self.session_status_label)
         layout.addStretch(1)
@@ -358,7 +387,202 @@ class DeepSliceMainWindow(QMainWindow):
         layout.addWidget(self.hardware_button)
         layout.addWidget(self.save_session_button)
         layout.addWidget(self.load_session_button)
+        layout.addWidget(self.open_log_button)
+        layout.addWidget(self.copy_error_button)
+        layout.addWidget(self.auto_fix_button)
         return frame
+
+    def _record_error(self, context: str, error_text: str):
+        clean_context = str(context).strip() or "DeepSlice error"
+        clean_text = str(error_text).strip() or "No additional error details were provided."
+        analysis = self._error_autofixer.analyze_error(clean_context, clean_text)
+        analysis_text = self._error_autofixer.format_analysis(analysis)
+
+        report_body = clean_text
+        if analysis_text:
+            report_body = f"{clean_text}\n\nAuto Analysis:\n{analysis_text}"
+
+        if hasattr(self, "console_output"):
+            self._append_console_log(f"[ERROR] {clean_context}")
+            self._append_console_log(clean_text)
+            if analysis.get("summary"):
+                self._append_console_log(f"[ANALYSIS] {analysis['summary']}")
+
+        self._last_error_report = build_error_report(
+            context=clean_context,
+            error_text=report_body,
+            log_path=self.error_log_path,
+        )
+        self._last_error_context = clean_context
+        self._last_error_text = clean_text
+        self._last_error_analysis = analysis
+
+        if hasattr(self, "copy_error_button"):
+            self.copy_error_button.setEnabled(True)
+        if hasattr(self, "auto_fix_button"):
+            self.auto_fix_button.setEnabled(bool(analysis.get("auto_fix_available", False)))
+
+        log_error_text(clean_context, report_body)
+
+    def _copy_last_error_report(self, show_message: bool = True):
+        report = self._last_error_report.strip()
+        if not report:
+            tail_text = read_error_log_tail()
+            if not tail_text.strip():
+                tail_text = "No logged errors found yet."
+            report = build_error_report(
+                context="DeepSlice log tail",
+                error_text=tail_text,
+                log_path=self.error_log_path,
+            )
+
+        QApplication.clipboard().setText(report)
+
+        if show_message:
+            QMessageBox.information(
+                self,
+                "Error Report Copied",
+                "Copied an error report to clipboard. You can paste it into chat or an issue report.",
+            )
+
+    def _try_auto_fix_last_error(self):
+        if not self._last_error_text:
+            QMessageBox.information(
+                self,
+                "Auto-Fix",
+                "No previous error is available for auto-fix.",
+            )
+            return
+
+        self._start_auto_fix(
+            context=self._last_error_context or "Last recorded error",
+            error_text=self._last_error_text,
+        )
+
+    def _start_auto_fix(self, context: str, error_text: str):
+        analysis = self._error_autofixer.analyze_error(context, error_text)
+        if not analysis.get("auto_fix_available", False):
+            QMessageBox.information(
+                self,
+                "Auto-Fix",
+                self._error_autofixer.format_analysis(analysis),
+            )
+            return
+
+        self._append_console_log("Starting automatic error-fix attempt...")
+        self.auto_fix_button.setEnabled(False)
+
+        worker = FunctionWorker(self._auto_fix_task, context, error_text)
+        worker.signals.finished.connect(self._on_auto_fix_finished)
+        worker.signals.error.connect(self._on_auto_fix_error)
+        self._track_worker(worker)
+        self.thread_pool.start(worker)
+
+    def _auto_fix_task(self, context: str, error_text: str):
+        return self._error_autofixer.try_auto_fix(context, error_text)
+
+    def _on_auto_fix_finished(self, result: dict):
+        analysis = result.get("analysis", {}) or {}
+        self.auto_fix_button.setEnabled(bool(analysis.get("auto_fix_available", False)))
+
+        summary = str(result.get("summary", "Automatic fix finished.")).strip()
+        details = str(result.get("details", "")).strip()
+        combined = summary if not details else f"{summary}\n\n{details}"
+
+        if bool(result.get("succeeded", False)):
+            self._append_console_log(f"[AUTO-FIX] {summary}")
+            QMessageBox.information(self, "Auto-Fix Succeeded", combined)
+            return
+
+        if bool(result.get("attempted", False)):
+            self._show_logged_error(
+                title="Auto-Fix Failed",
+                context="Automatic fix attempt failed",
+                error_text=combined,
+                icon=QMessageBox.Warning,
+            )
+            return
+
+        QMessageBox.information(self, "Auto-Fix", combined)
+
+    def _on_auto_fix_error(self, error_text: str):
+        self.auto_fix_button.setEnabled(bool(self._last_error_analysis and self._last_error_analysis.get("auto_fix_available", False)))
+        self._show_logged_error(
+            title="Auto-Fix Error",
+            context="Automatic fix process crashed",
+            error_text=error_text,
+            icon=QMessageBox.Warning,
+        )
+
+    def _open_error_log(self):
+        if not os.path.exists(self.error_log_path):
+            QMessageBox.information(
+                self,
+                "Open Error Log",
+                f"No error log file exists yet:\n{self.error_log_path}",
+            )
+            return
+
+        try:
+            if os.name == "nt":
+                os.startfile(self.error_log_path)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", self.error_log_path])
+        except Exception as exc:
+            self._show_logged_exception(
+                title="Open Error Log",
+                context="Unable to open the error log file",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
+
+    def _show_logged_error(
+        self,
+        title: str,
+        context: str,
+        error_text: str,
+        icon=QMessageBox.Critical,
+    ):
+        self._record_error(context, error_text)
+        analysis = self._last_error_analysis or {}
+        analysis_text = self._error_autofixer.format_analysis(analysis)
+        can_auto_fix = bool(analysis.get("auto_fix_available", False))
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(title)
+        message_box.setIcon(icon)
+        message_box.setText(
+            (
+                f"{context}\n\n"
+                f"Details have been written to:\n{self.error_log_path}\n\n"
+                f"Analysis: {analysis.get('summary', 'No automatic pattern match found.')}"
+            )
+        )
+        detail_blocks = [str(error_text)]
+        if analysis_text:
+            detail_blocks.append("Auto Analysis\n" + analysis_text)
+        message_box.setDetailedText("\n\n".join(detail_blocks))
+        message_box.setStandardButtons(QMessageBox.Ok)
+        copy_button = message_box.addButton("Copy Error Report", QMessageBox.ActionRole)
+        auto_fix_button = None
+        if can_auto_fix:
+            auto_fix_button = message_box.addButton("Try Auto-Fix", QMessageBox.ActionRole)
+        message_box.exec()
+
+        if message_box.clickedButton() == copy_button:
+            self._copy_last_error_report(show_message=False)
+        elif auto_fix_button is not None and message_box.clickedButton() == auto_fix_button:
+            self._start_auto_fix(context=context, error_text=error_text)
+
+    def _show_logged_exception(
+        self,
+        title: str,
+        context: str,
+        exc: BaseException,
+        icon=QMessageBox.Critical,
+    ):
+        error_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        self._show_logged_error(title, context, error_text, icon=icon)
 
     def _build_ingestion_page(self) -> QWidget:
         page = QWidget()
@@ -1107,10 +1331,11 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             value = self.state.estimate_section_thickness_um()
         except Exception as exc:
-            QMessageBox.information(
-                self,
-                "Thickness Suggestion",
-                f"Unable to estimate thickness yet: {exc}",
+            self._show_logged_exception(
+                title="Thickness Suggestion",
+                context="Unable to estimate thickness yet",
+                exc=exc,
+                icon=QMessageBox.Warning,
             )
             return
         self.thickness_spin.setValue(float(value))
@@ -1240,8 +1465,12 @@ class DeepSliceMainWindow(QMainWindow):
 
     def _on_prediction_error(self, error_text: str):
         self.run_alignment_button.setEnabled(True)
-        self._append_console_log(error_text)
-        QMessageBox.critical(self, "Prediction Failed", error_text)
+        self._show_logged_error(
+            title="Prediction Failed",
+            context="Alignment prediction task failed",
+            error_text=error_text,
+            icon=QMessageBox.Critical,
+        )
 
     def _on_prediction_finished(self, result: dict):
         self.run_alignment_button.setEnabled(True)
@@ -1277,8 +1506,13 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             value_text = label_text.split(":", 1)[1].replace("um", "").strip()
             value = float(value_text)
-        except Exception:
-            QMessageBox.information(self, "Thickness", "No predicted thickness available.")
+        except Exception as exc:
+            self._show_logged_exception(
+                title="Thickness",
+                context="No predicted thickness value is available to apply",
+                exc=exc,
+                icon=QMessageBox.Information,
+            )
             return
         self.auto_thickness_checkbox.setChecked(False)
         self.thickness_spin.setValue(value)
@@ -1522,7 +1756,7 @@ class DeepSliceMainWindow(QMainWindow):
             self.atlas_slice_info_label.setText("Atlas: rendering")
 
     def _on_atlas_error(self, error_text: str):
-        self._append_console_log(error_text)
+        self._record_error("Atlas preview task failed", error_text)
         self.atlas_slice_info_label.setText("Atlas: failed")
         self._latest_atlas_slice = None
         self._latest_atlas_meta = None
@@ -1697,7 +1931,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.set_bad_sections(bad_sections, auto=False)
         except Exception as exc:
-            QMessageBox.warning(self, "Bad Section Flagging", str(exc))
+            self._show_logged_exception(
+                title="Bad Section Flagging",
+                context="Unable to apply bad section flags",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
 
         self._refresh_curation_views()
@@ -1715,7 +1954,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.apply_manual_order(ordered_indices)
         except Exception as exc:
-            QMessageBox.warning(self, "Manual Reordering", str(exc))
+            self._show_logged_exception(
+                title="Manual Reordering",
+                context="Unable to apply manual section reordering",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
 
         self._refresh_curation_views()
@@ -1726,7 +1970,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.set_bad_sections([], auto=True)
         except Exception as exc:
-            QMessageBox.warning(self, "Outlier Detection", str(exc))
+            self._show_logged_exception(
+                title="Outlier Detection",
+                context="Unable to detect outlier sections",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
         self._refresh_curation_views()
 
@@ -1736,7 +1985,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.propagate_angles()
         except Exception as exc:
-            QMessageBox.warning(self, "Normalize Angles", str(exc))
+            self._show_logged_exception(
+                title="Normalize Angles",
+                context="Unable to normalize section angles",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
         self._refresh_curation_views()
 
@@ -1749,7 +2003,12 @@ class DeepSliceMainWindow(QMainWindow):
                 dv_angle=float(self.dv_spin.value()),
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Manual Angle Override", str(exc))
+            self._show_logged_exception(
+                title="Manual Angle Override",
+                context="Unable to apply manual angle override",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
         self._refresh_curation_views()
 
@@ -1759,7 +2018,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.enforce_index_order()
         except Exception as exc:
-            QMessageBox.warning(self, "Enforce Index Order", str(exc))
+            self._show_logged_exception(
+                title="Enforce Index Order",
+                context="Unable to enforce index order",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
         self._refresh_curation_views()
 
@@ -1772,7 +2036,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.enforce_index_spacing(section_thickness_um=section_thickness)
         except Exception as exc:
-            QMessageBox.warning(self, "Enforce Index Spacing", str(exc))
+            self._show_logged_exception(
+                title="Enforce Index Spacing",
+                context="Unable to enforce index spacing",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
             return
         self._refresh_curation_views()
 
@@ -1780,7 +2049,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.undo()
         except Exception as exc:
-            QMessageBox.information(self, "Undo", str(exc))
+            self._show_logged_exception(
+                title="Undo",
+                context="Undo operation failed",
+                exc=exc,
+                icon=QMessageBox.Information,
+            )
             return
         self._refresh_curation_views()
 
@@ -1788,7 +2062,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.redo()
         except Exception as exc:
-            QMessageBox.information(self, "Redo", str(exc))
+            self._show_logged_exception(
+                title="Redo",
+                context="Redo operation failed",
+                exc=exc,
+                icon=QMessageBox.Information,
+            )
             return
         self._refresh_curation_views()
 
@@ -1829,7 +2108,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             self.state.save_predictions(base_path, output_format=output_format)
         except Exception as exc:
-            QMessageBox.critical(self, "Export Failed", str(exc))
+            self._show_logged_exception(
+                title="Export Failed",
+                context="Prediction export failed",
+                exc=exc,
+                icon=QMessageBox.Critical,
+            )
             return
 
         self.last_export_basepath = base_path
@@ -1874,7 +2158,12 @@ class DeepSliceMainWindow(QMainWindow):
                 options=options,
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Report Failed", str(exc))
+            self._show_logged_exception(
+                title="Report Failed",
+                context="Report generation failed",
+                exc=exc,
+                icon=QMessageBox.Critical,
+            )
             return
 
         QMessageBox.information(self, "Report", f"Report created:\n{report_path}")
@@ -1923,7 +2212,12 @@ class DeepSliceMainWindow(QMainWindow):
         try:
             subprocess.Popen([quicknii_path, target_file])
         except Exception as exc:
-            QMessageBox.critical(self, "QuickNII", str(exc))
+            self._show_logged_exception(
+                title="QuickNII",
+                context="Failed to launch QuickNII",
+                exc=exc,
+                icon=QMessageBox.Critical,
+            )
             return
 
     def _refresh_export_views(self):
@@ -1973,9 +2267,18 @@ class DeepSliceMainWindow(QMainWindow):
         if not filename.endswith(".deepslice-session.json"):
             filename = filename + ".deepslice-session.json"
 
-        payload = self.state.to_session_dict()
-        with open(filename, "w", encoding="utf-8") as file_handle:
-            json.dump(payload, file_handle, indent=2)
+        try:
+            payload = self.state.to_session_dict()
+            with open(filename, "w", encoding="utf-8") as file_handle:
+                json.dump(payload, file_handle, indent=2)
+        except Exception as exc:
+            self._show_logged_exception(
+                title="Save Session",
+                context="Failed to save DeepSlice session",
+                exc=exc,
+                icon=QMessageBox.Critical,
+            )
+            return
 
         self.session_status_label.setText(f"Session: Saved {os.path.basename(filename)}")
 
@@ -1990,14 +2293,22 @@ class DeepSliceMainWindow(QMainWindow):
             return
 
         if filename.lower().endswith(".deepslice-session.json"):
-            with open(filename, "r", encoding="utf-8") as file_handle:
-                payload = json.load(file_handle)
-            self.state.load_session_dict(payload)
-            self._apply_state_to_widgets()
-            self.session_status_label.setText(
-                f"Session: Loaded {os.path.basename(filename)}"
-            )
-            self._refresh_all_views()
+            try:
+                with open(filename, "r", encoding="utf-8") as file_handle:
+                    payload = json.load(file_handle)
+                self.state.load_session_dict(payload)
+                self._apply_state_to_widgets()
+                self.session_status_label.setText(
+                    f"Session: Loaded {os.path.basename(filename)}"
+                )
+                self._refresh_all_views()
+            except Exception as exc:
+                self._show_logged_exception(
+                    title="Load Session",
+                    context="Failed to load DeepSlice session",
+                    exc=exc,
+                    icon=QMessageBox.Critical,
+                )
             return
 
         if filename.lower().endswith(".json"):
@@ -2093,7 +2404,12 @@ class DeepSliceMainWindow(QMainWindow):
 
             QMessageBox.information(self, "Hardware Health", "\n".join(lines))
         except Exception as exc:
-            QMessageBox.warning(self, "Hardware Health", str(exc))
+            self._show_logged_exception(
+                title="Hardware Health",
+                context="Unable to query TensorFlow hardware details",
+                exc=exc,
+                icon=QMessageBox.Warning,
+            )
 
     def _update_hardware_mode_label(self):
         try:

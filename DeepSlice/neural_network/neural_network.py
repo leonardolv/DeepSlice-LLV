@@ -12,6 +12,7 @@ from skimage.color import rgb2gray
 import warnings
 import h5py
 from PIL import Image
+from ..diagnostics import monitored
 
 
 VALID_IMAGE_FORMATS = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
@@ -42,10 +43,12 @@ def gray_scale(img: np.ndarray) -> np.ndarray:
     :return: The converted image
     :rtype: numpy.ndarray
     """
-    img = rgb2gray(img).reshape(299, 299, 1)
+    h, w = img.shape[:2]
+    img = rgb2gray(img).reshape(h, w, 1)
     return img
 
 
+@monitored("DS-006")
 def initialise_network(xception_weights: str, weights: str, species: str) -> Sequential:
     """
     Initialise a neural network with the given weights
@@ -60,7 +63,7 @@ def initialise_network(xception_weights: str, weights: str, species: str) -> Seq
 
     if species == "rat":
         inputs = Input(shape=(299, 299, 3))
-        base_model_layer = base_model(inputs, training=True)
+        base_model_layer = base_model(inputs, training=False)
         dense1_layer = Dense(256, activation="relu")(base_model_layer)
         dense2_layer = Dense(256, activation="relu")(dense1_layer)
         output_layer = Dense(9, activation="linear")(dense2_layer)
