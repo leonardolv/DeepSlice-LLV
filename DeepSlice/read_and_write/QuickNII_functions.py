@@ -1,7 +1,10 @@
-import pandas as pd
-import xml.etree.ElementTree as ET
+import io
 import json
+import re
+import xml.etree.ElementTree as ET
+
 import numpy as np
+import pandas as pd
 
 
 def write_QuickNII_XML(df: pd.DataFrame, filename: str, aligner: str) -> None:
@@ -11,7 +14,7 @@ def write_QuickNII_XML(df: pd.DataFrame, filename: str, aligner: str) -> None:
     df_temp = df.copy()
     if "nr" not in df_temp.columns:
         df_temp["nr"] = np.arange(len(df_temp)) + 1
-    df_temp[["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz", "nr"]] = df[
+    df_temp[["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz", "nr"]] = df_temp[
         ["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz", "nr"]
     ].astype(str)
     out_df = pd.DataFrame(
@@ -42,20 +45,34 @@ def write_QuickNII_XML(df: pd.DataFrame, filename: str, aligner: str) -> None:
     )
     print(f"saving to {filename}.xml")
 
-    out_df.to_xml(
-        filename + ".xml",
-        index=False,
-        root_name="series",
-        row_name="slice",
-        attr_cols=list(out_df.columns),
-        namespaces={
-            "first": df_temp.nr.values[0],
-            "last": df_temp.nr.values[-1],
-            "name": filename,
-            "aligner": aligner,
-            "": "",
+    first_nr = str(out_df["nr"].iloc[0]) if len(out_df) else ""
+    last_nr = str(out_df["nr"].iloc[-1]) if len(out_df) else ""
+
+    root = ET.Element(
+        "series",
+        attrib={
+            "first": first_nr,
+            "last": last_nr,
+            "name": str(filename),
+            "aligner": str(aligner),
         },
     )
+
+    for row in out_df.itertuples(index=False):
+        ET.SubElement(
+            root,
+            "slice",
+            attrib={
+                "anchoring": str(row.anchoring),
+                "filename": str(row.filename),
+                "height": str(row.height),
+                "width": str(row.width),
+                "nr": str(row.nr),
+            },
+        )
+
+    tree = ET.ElementTree(root)
+    tree.write(filename + ".xml", encoding="utf-8", xml_declaration=True)
 
 
 
@@ -63,21 +80,36 @@ def read_QuickNII_XML(filename: str) -> pd.DataFrame:
     """
     Converts a QuickNII XML to a pandas dataframe
     """
-    # read raw XML and escape bare &
-    with open(filename, 'r', encoding='utf-8') as f:
+    # read raw XML and escape bare & characters found in anchoring attrs
+    with open(filename, "r", encoding="utf-8") as f:
         raw = f.read()
-    # only replace & that aren’t part of &amp; &lt; &gt; &quot; &apos;
-    raw = re.sub(r'&(?!amp;|lt;|gt;|quot;|apos;)', '&amp;', raw)
+    # only replace & that are not pre-escaped entities
+    raw = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;)", "&amp;", raw)
     # parse from cleaned string
-    df = pd.read_xml(io.StringIO(raw))
+    df = pd.read_xml(io.StringIO(raw), parser="etree")
 
-    # split the anchoring string into separate columns
-    anchoring = df.anchoring.str.split("&", expand=True).values
-    strip = lambda x: "".join(c for c in x if c.isdigit() or c in ".-e")
-    anchoring = np.vectorize(strip)(anchoring).astype(np.float64)
+    if "anchoring" not in df.columns:
+        raise ValueError("Invalid QuickNII XML: missing 'anchoring' field")
 
-    out_df = pd.DataFrame({"Filenames": df.filename})
-    out_df[["ox","oy","oz","ux","uy","uz","vx","vy","vz"]] = anchoring
+    vector_columns = ["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz"]
+    parsed_anchoring = []
+    for anchoring in df["anchoring"].astype(str).values:
+        key_values = {}
+        for item in anchoring.split("&"):
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            try:
+                key_values[key] = float(value)
+            except ValueError:
+                key_values[key] = np.nan
+        parsed_anchoring.append([key_values.get(column, np.nan) for column in vector_columns])
+
+    out_df = pd.DataFrame({"Filenames": df["filename"]})
+    out_df[vector_columns] = parsed_anchoring
+    for optional_column in ["nr", "height", "width"]:
+        if optional_column in df.columns:
+            out_df[optional_column] = df[optional_column]
     return out_df
 
 
@@ -95,7 +127,16 @@ def write_QUINT_JSON(
         markers = df.markers.values
     else:
         markers = [[]] * len(df)
-    print(len(markers))
+
+    def serialize_markers(marker_value):
+        if marker_value is None:
+            return []
+        if isinstance(marker_value, (list, tuple)):
+            return list(marker_value)
+        if isinstance(marker_value, float) and np.isnan(marker_value):
+            return []
+        return marker_value
+
     alignment_metadata = [
         {
             "filename": fn,
@@ -103,7 +144,7 @@ def write_QUINT_JSON(
             "height": h,
             "width": w,
             "nr": nr,
-            "markers": marker[0] if len(marker) > 0 else [],
+            "markers": serialize_markers(marker),
         }
         for fn, alignment, nr, marker, h, w in zip(
             df.Filenames, alignments, df.nr, markers, df.height, df.width
@@ -118,8 +159,6 @@ def write_QUINT_JSON(
     print(f"saving to {filename}.json")
     with open(filename + ".json", "w") as f:
         json.dump(QUINT_json, f)
-    with open(filename + ".json", "w") as outfile:
-        json.dump(QUINT_json, outfile)
 
 
 def read_QUINT_JSON(filename: str) -> pd.DataFrame:

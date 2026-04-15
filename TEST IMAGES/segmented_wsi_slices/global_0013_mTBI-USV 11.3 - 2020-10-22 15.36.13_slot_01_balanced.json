@@ -1,0 +1,19 @@
+{
+  "source_wsi": "D:\\HISTOLOGY\\mTBI-USV 11.3 - 2020-10-22 15.36.13.ndpi",
+  "source_wsi_name": "mTBI-USV 11.3 - 2020-10-22 15.36.13.ndpi",
+  "case_id": "11",
+  "slot_index": 1,
+  "global_index": 13,
+  "export_profile": "balanced",
+  "export_format": "tiff",
+  "roi_box_full_res": [
+    3297,
+    3407,
+    53616,
+    36480
+  ],
+  "export_path": "D:\\HISTOLOGY\\segmented_wsi_slices\\global_0013_mTBI-USV 11.3 - 2020-10-22 15.36.13_slot_01_balanced.tiff",
+  "png_path": "",
+  "tiff_path": "D:\\HISTOLOGY\\segmented_wsi_slices\\global_0013_mTBI-USV 11.3 - 2020-10-22 15.36.13_slot_01_balanced.tiff",
+  "created_at": "2026-04-12T22:27:37"
+}

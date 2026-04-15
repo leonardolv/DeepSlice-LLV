@@ -261,6 +261,9 @@ def set_bad_sections_util(
     :rtype: pandas.DataFrame
     """
 
+    if bad_sections is None:
+        bad_sections = []
+
     bad_section_indexes = [
         df.Filenames.str.contains(bad_section) for bad_section in bad_sections
     ]
@@ -268,8 +271,12 @@ def set_bad_sections_util(
         raise ValueError(
             "Multiple sections match the same bad section string, make sure each bad section string is unique"
         )
-    bad_section_indexes = [np.where(x)[0] for x in bad_section_indexes]
-    bad_section_indexes = np.concatenate(bad_section_indexes)
+    if len(bad_section_indexes) > 0:
+        bad_section_indexes = [np.where(x)[0] for x in bad_section_indexes]
+        bad_section_indexes = np.concatenate(bad_section_indexes)
+    else:
+        bad_section_indexes = np.array([], dtype=int)
+
     df.loc[~df.index.isin(bad_section_indexes), "bad_section"] = False
     if auto:
         df["depths"] = calculate_brain_center_depths(df)
@@ -283,7 +290,7 @@ def set_bad_sections_util(
     df.loc[bad_section_indexes, "bad_section"] = True
     # make the other sections are False
 
-    bad_sections_found = np.sum(bad_section_indexes)
+    bad_sections_found = len(bad_section_indexes)
     # Tell the user which sections were identified as bad
     if bad_sections_found > 0:
         print(

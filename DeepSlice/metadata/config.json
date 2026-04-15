@@ -11,8 +11,8 @@
         "xception_imagenet":{"path":"weights/xception_weights_tf_dim_ordering_tf_kernels.h5", "url":"https://data-proxy.ebrains.eu/api/v1/buckets/deepslice/weights/xception_weights_tf_dim_ordering_tf_kernels.h5"}
     },
     "ensemble_status":{
-        "mouse":"True",
-        "rat":"False"
+        "mouse":true,
+        "rat":false
         },
     "target_volumes":{
         "mouse":{"name":"ABA_Mouse_CCFv3_2017_25um.cutlas","voxel_size_microns":25},

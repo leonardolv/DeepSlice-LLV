@@ -10,9 +10,24 @@ import numpy as np
 import os
 from skimage.color import rgb2gray
 import warnings
-import imghdr
-import struct
 import h5py
+from PIL import Image
+
+
+class PredictionProgressCallback(tf.keras.callbacks.Callback):
+    """Keras callback used to expose prediction progress to the GUI."""
+
+    def __init__(self, total_images, phase, progress_callback):
+        super().__init__()
+        self.total_images = total_images
+        self.phase = phase
+        self.progress_callback = progress_callback
+
+    def on_predict_batch_end(self, batch, logs=None):
+        if self.progress_callback is None:
+            return
+        completed = min(batch + 1, self.total_images)
+        self.progress_callback(completed, self.total_images, self.phase)
 
 
 def gray_scale(img: np.ndarray) -> np.ndarray:
@@ -114,7 +129,7 @@ def load_images_from_path(image_path: str) -> np.ndarray:
     """
     if not os.path.isdir(image_path):
         raise ValueError("The path provided is not a directory")
-    valid_formats = [".jpg", ".jpeg", ".png"]
+    valid_formats = [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
     images = glob(image_path + "/*")
 
     images = [i for i in images if os.path.splitext(i)[1].lower() in valid_formats]
@@ -152,7 +167,7 @@ def load_images_from_list(image_list: list) -> np.ndarray:
     :return: an Image generator for the found images
     :rtype: keras.preprocessing.image.ImageDataGenerator
     """
-    valid_formats = [".jpg", ".jpeg", ".png"]
+    valid_formats = [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
     images = [i for i in image_list if os.path.splitext(i)[1].lower() in valid_formats]
     sizes = [get_image_size(i) for i in images]
     width = [i[0] for i in sizes]
@@ -187,6 +202,8 @@ def predictions_util(
     secondary_weights: str,
     ensemble: bool = False,
     species: str = "mouse",
+    progress_callback=None,
+    log_callback=None,
 ):
     """
     Predict the image alignments
@@ -199,19 +216,46 @@ def predictions_util(
     :rtype: list
     """
     model = load_xception_weights(model, primary_weights, species)
+    steps = int(np.ceil(image_generator.n / image_generator.batch_size))
+    callbacks = None
+    if progress_callback is not None:
+        callbacks = [
+            PredictionProgressCallback(
+                total_images=image_generator.n,
+                phase="primary",
+                progress_callback=progress_callback,
+            )
+        ]
+    if log_callback is not None:
+        log_callback("Running primary inference pass")
+
     predictions = model.predict(
         image_generator,
-        steps=image_generator.n // image_generator.batch_size,
+        steps=steps,
         verbose=1,
+        callbacks=callbacks,
     )
     predictions = predictions.astype(np.float64)
     if ensemble:
         image_generator.reset()
         model = load_xception_weights(model, secondary_weights, species)
+        callbacks = None
+        if progress_callback is not None:
+            callbacks = [
+                PredictionProgressCallback(
+                    total_images=image_generator.n,
+                    phase="secondary",
+                    progress_callback=progress_callback,
+                )
+            ]
+        if log_callback is not None:
+            log_callback("Running ensemble secondary inference pass")
+
         secondary_predictions = model.predict(
             image_generator,
-            steps=image_generator.n // image_generator.batch_size,
+            steps=steps,
             verbose=1,
+            callbacks=callbacks,
         )
         predictions = np.mean([predictions, secondary_predictions], axis=0)
         model = load_xception_weights(model, primary_weights, species)
@@ -236,36 +280,10 @@ def predictions_util(
 
 
 def get_image_size(fname):
-    # https://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib
-    """Determine the image type of fhandle and return its size.
-    from draco"""
-    with open(fname, "rb") as fhandle:
-        head = fhandle.read(24)
-        if len(head) != 24:
-            raise Exception("Invalid header")
-
-        ext = imghdr.what(fname)
-        if imghdr.what(fname) == "png":
-            check = struct.unpack(">i", head[4:8])[0]
-            if check != 0x0D0A1A0A:
-                raise Exception("png checksum failed")
-            width, height = struct.unpack(">ii", head[16:24])
-        elif imghdr.what(fname) == "gif":
-            width, height = struct.unpack("<HH", head[6:10])
-        elif imghdr.what(fname) == "jpeg":
-            fhandle.seek(0)  # Read 0xff next
-            size = 2
-            ftype = 0
-            while not 0xC0 <= ftype <= 0xCF:
-                fhandle.seek(size, 1)
-                byte = fhandle.read(1)
-                while ord(byte) == 0xFF:
-                    byte = fhandle.read(1)
-                ftype = ord(byte)
-                size = struct.unpack(">H", fhandle.read(2))[0] - 2
-            # We are at a SOFn block
-            fhandle.seek(1, 1)  # Skip `precision' byte.
-            height, width = struct.unpack(">HH", fhandle.read(4))
-        else:
-            raise Exception(f"Invalid filetype: {head}")
-        return width, height
+    """Return width and height for an image file using Pillow."""
+    try:
+        with Image.open(fname) as image:
+            width, height = image.size
+    except Exception as exc:
+        raise ValueError(f"Unable to read image dimensions for '{fname}': {exc}") from exc
+    return width, height

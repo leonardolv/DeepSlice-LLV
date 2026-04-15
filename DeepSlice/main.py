@@ -1,4 +1,20 @@
 from typing import Union
+
+# Allow "Run Python File" on DeepSlice/main.py in VS Code.
+# When executed as a script, launch the GUI entrypoint from package context
+# before evaluating package-relative imports below.
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from DeepSlice.gui.app import main as _launch_gui_main
+
+    raise SystemExit(_launch_gui_main())
+
 from .coord_post_processing import spacing_and_indexing, angle_methods
 from .read_and_write import QuickNII_functions
 from .neural_network import neural_network
@@ -6,24 +22,44 @@ from .metadata import metadata_loader
 
 
 class DSModel:
-    def __init__(self, species):
+    def __init__(self, species, download_callback=None, log_callback=None):
         """Initialises a DeepSlice model for a given species
         :param species: the species of the brain to be processed, must be one of "mouse", "rat"
         :type species: str
         """
         self.species = species
+        self.download_callback = download_callback
+        self.log_callback = log_callback
 
         self.config, self.metadata_path = metadata_loader.load_config()
         xception_weights = metadata_loader.get_data_path(
-            self.config["weight_file_paths"]["xception_imagenet"], self.metadata_path
+            self.config["weight_file_paths"]["xception_imagenet"],
+            self.metadata_path,
+            download_callback=self.download_callback,
         )
         weights = metadata_loader.get_data_path(
             self.config["weight_file_paths"][self.species]["primary"],
             self.metadata_path,
+            download_callback=self.download_callback,
         )
         self.model = neural_network.initialise_network(
             xception_weights, weights, self.species
         )
+
+    @staticmethod
+    def _parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() == "true"
+        return bool(value)
+
+    def _log(self, message, callback=None):
+        logger = callback if callback is not None else self.log_callback
+        if logger is None:
+            print(message)
+            return
+        logger(message)
 
     def predict(
         self,
@@ -33,6 +69,8 @@ class DSModel:
         legacy_section_numbers=False,
         image_list=None,
         use_secondary_model=False,
+        progress_callback=None,
+        log_callback=None,
     ):
         """predicts the atlas position for a folder full of histological brain sections
 
@@ -49,16 +87,17 @@ class DSModel:
         # We set this to false as predict is the entry point for a new brain and therefore we need to reset all values which may persist from a previous animal.
         self.bad_sections_present = False
         # Different species may or may not have an ensemble model, so we need to check for this before defaulting to True
-        if ensemble == None:
+        if ensemble is None:
             ensemble = self.config["ensemble_status"][self.species]
-            ensemble = eval(ensemble)
+            ensemble = self._parse_bool(ensemble)
         if image_list:
             image_generator, width, height = neural_network.load_images_from_list(
                 image_list
             )
             if image_directory:
-                print(
-                    "WARNING: image_directory is set but image_list is also set. image_directory will be ignored."
+                self._log(
+                    "WARNING: image_directory is set but image_list is also set. image_directory will be ignored.",
+                    callback=log_callback,
                 )
         else:
             image_generator, width, height = neural_network.load_images_from_path(
@@ -67,28 +106,32 @@ class DSModel:
         primary_weights = metadata_loader.get_data_path(
             self.config["weight_file_paths"][self.species]["primary"],
             self.metadata_path,
+            download_callback=self.download_callback,
         )
 
         secondary_weights = metadata_loader.get_data_path(
             self.config["weight_file_paths"][self.species]["secondary"],
             self.metadata_path,
+            download_callback=self.download_callback,
         )
 
         if secondary_weights == "None":
-            print(f"ensemble is not available for {self.species}")
+            self._log(f"ensemble is not available for {self.species}", callback=log_callback)
             if use_secondary_model:
-                print(
-                    "WARNING: use_secondary_model is set but no secondary model is available. use_secondary_model will be ignored."
+                self._log(
+                    "WARNING: use_secondary_model is set but no secondary model is available. use_secondary_model will be ignored.",
+                    callback=log_callback,
                 )
                 use_secondary_model = False
             ensemble = False
         if use_secondary_model and ensemble:
-            print(
-                "WARNING: use_secondary_model is set but ensemble is also set. use_secondary_model will be ignored."
+            self._log(
+                "WARNING: use_secondary_model is set but ensemble is also set. use_secondary_model will be ignored.",
+                callback=log_callback,
             )
             use_secondary_model = False
         if use_secondary_model:
-            print("Using secondary model")
+            self._log("Using secondary model", callback=log_callback)
             predictions = neural_network.predictions_util(
                 self.model,
                 image_generator,
@@ -96,6 +139,8 @@ class DSModel:
                 None,
                 ensemble,
                 self.species,
+                progress_callback=progress_callback,
+                log_callback=log_callback,
             )
         else:
             predictions = neural_network.predictions_util(
@@ -105,6 +150,8 @@ class DSModel:
                 secondary_weights,
                 ensemble,
                 self.species,
+                progress_callback=progress_callback,
+                log_callback=log_callback,
             )
         predictions["width"] = width
         predictions["height"] = height
@@ -171,7 +218,7 @@ class DSModel:
         :type ML: [int, float]
         :type DV: [int, float]
         """
-        self.predictions = angle_methods.set_angles(self.predictions, ML, DV)
+        self.predictions = angle_methods.set_angles(self.predictions, DV, ML)
 
     def propagate_angles(self, method="weighted_mean"):
         """
@@ -204,26 +251,39 @@ class DSModel:
             raise ValueError("File must be a JSON or XML")
         self.predictions = predictions
         xception_weights = metadata_loader.get_data_path(
-            self.config["weight_file_paths"]["xception_imagenet"], self.metadata_path
+            self.config["weight_file_paths"]["xception_imagenet"],
+            self.metadata_path,
+            download_callback=self.download_callback,
         )
         weights = metadata_loader.get_data_path(
             self.config["weight_file_paths"][self.species]["primary"],
             self.metadata_path,
+            download_callback=self.download_callback,
         )
         self.model = neural_network.initialise_network(
             xception_weights, weights, self.species
         )
 
-    def save_predictions(self, filename):
+    def save_predictions(self, filename, output_format="json"):
         """
-        Save the predictions to a QuickNII compatible JSON file.
+        Save the predictions to a QuickNII compatible file.
 
         :param filename: the name of the file to save to
         :type filename: str
+        :param output_format: one of "json" or "xml", defaults to "json"
+        :type output_format: str
         """
         target = self.config["target_volumes"][self.species]["name"]
         aligner = self.config["DeepSlice_version"]["prerelease"]
         self.predictions.to_csv(filename + ".csv", index=False)
-        QuickNII_functions.write_QUINT_JSON(
-            df=self.predictions, filename=filename, aligner=aligner, target=target
-        )
+        output_format = output_format.lower()
+        if output_format == "json":
+            QuickNII_functions.write_QUINT_JSON(
+                df=self.predictions, filename=filename, aligner=aligner, target=target
+            )
+        elif output_format == "xml":
+            QuickNII_functions.write_QuickNII_XML(
+                df=self.predictions, filename=filename, aligner=aligner
+            )
+        else:
+            raise ValueError("output_format must be one of 'json' or 'xml'")

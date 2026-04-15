@@ -22,6 +22,48 @@ DeepSlice is fully integrated with the <a href="https://quint-workflow.readthedo
 
 ## Web Application
 If you would like to use DeepSlice but don't need your own personal installation, check out [**DeepSlice Flask**](https://www.DeepSlice.com.au), a web application which will allow you to upload your dataset and download the aligned results. Some more advanced options are only available in the Python package. The web interface was developed by [Michael Pegios](https://github.com/ThermoDev/).
+
+## Desktop GUI
+DeepSlice now includes a desktop interface for end-to-end alignment and curation.
+
+Launch from terminal:
+
+```bash
+deepslice-gui
+```
+
+or:
+
+```bash
+python -m DeepSlice.gui.app
+```
+
+GUI workflow stages:
+
+1. Ingestion: drag-and-drop folders/files, filename index parsing, pre-flight validation.
+2. Configuration: Mouse (Allen CCFv3) or Rat (Waxholm Rat Atlas), prediction mode toggles.
+3. Prediction: threaded execution with progress updates.
+4. Curation: linearity plot, outlier detection, bad-section flags, angle and spacing controls.
+5. Export: QuickNII-compatible JSON (default) or legacy XML, with CSV always exported.
+
+Additional GUI capabilities:
+
+* Atlas volume preview in curation (mouse: nissl/stpt, rat: MRI), including first-run download progress.
+* Optional atlas-on-histology blend view with adjustable opacity for fast visual fit checks.
+* Composite per-slice confidence score that combines residual, angular consistency, spacing consistency, and Gaussian center weighting.
+* Drag-and-drop manual section reordering with undo/redo snapshots.
+
+Run tests:
+
+```bash
+pytest
+```
+
+Notes:
+
+* Coronal orientation is currently supported in the main pipeline.
+* Existing QuickNII JSON/XML can be loaded for re-curation.
+* TIFF input is supported alongside JPG/PNG.
 ## [Installation: How to install DeepSlice](#installation)
 
 ## [Usage: How to align using DeepSlice](#basic-usage)
@@ -43,6 +85,8 @@ This is the easy and recommended way to install DeepSlice, first make sure you h
 ```bash
 pip install DeepSlice
 ```
+
+DeepSlice supports Python 3.9-3.12. For best compatibility with TensorFlow-backed inference, use Python 3.11 or 3.12.
 And you're ready to go! 🚀 Check out the PyPi package [here](https://pypi.org/project/DeepSlice/)
 
 If you run into any problems create a github issue and I will help you solve it.

@@ -1,10 +1,9 @@
-from distutils.core import setup
-from setuptools import find_packages
+from setuptools import find_packages, setup
 from pathlib import Path
 import subprocess, os
 
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 # if GH action hasn’t replaced it, grab the latest tag
 version = os.getenv("DEEPSLICE_VERSION", "{{VERSION_PLACEHOLDER}}")
@@ -21,7 +20,7 @@ if version.startswith("{{"):
 
 setup(
     name="DeepSlice",
-    python_requires=">=3.7,<3.13",
+    python_requires=">=3.9,<3.13",
     packages=find_packages(),
     version=version,
     license="GPL-3.0",
@@ -42,18 +41,31 @@ setup(
     download_url="https://github.com/PolarBean/DeepSlice/archive/refs/tags/{{VERSION_PLACEHOLDER}}.tar.gz",
     keywords=["histology", "brain", "atlas", "alignment"],
     install_requires=[
-        "numpy",
-        "scikit-learn",
-        "scikit-image",
-        "tensorflow",
-        "h5py",
-        "typing",
-        "pandas",
-        "requests",
-        "protobuf",
-        "lxml",
-        "urllib3==1.26.6",
+        "numpy>=1.24",
+        "pandas>=1.5",
+        "scikit-image>=0.22",
+        "scipy>=1.10",
+        "tensorflow>=2.13",
+        "h5py>=3.9",
+        "requests>=2.31",
+        "protobuf>=4.21",
+        "lxml>=4.9",
+        "Pillow>=10.0",
+        "nibabel>=5.2",
+        "matplotlib>=3.8",
+        "PySide6>=6.6",
+        "reportlab>=4.0",
     ],
+    extras_require={
+        "dev": [
+            "pytest>=8.0",
+        ]
+    },
+    entry_points={
+        "console_scripts": [
+            "deepslice-gui=DeepSlice.gui.app:main",
+        ]
+    },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
