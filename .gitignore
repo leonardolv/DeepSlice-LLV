@@ -41,3 +41,4 @@ test.py
 # Ignore large NIfTI data (added by Copilot)
 DeepSlice/metadata/*.nii
 DeepSlice/metadata/*.nii.gz
+TEST IMAGES/
