@@ -291,6 +291,24 @@ class DeepSliceAppState:
         if self.model is not None and self.predictions is not None:
             self.model.predictions = self.predictions.copy()
 
+    def _recommended_inference_batch_size(self, progress_callback=None, log_callback=None) -> int:
+        if progress_callback is None:
+            return 16
+
+        batch_size = 2
+        try:
+            import tensorflow as tf
+
+            gpu_count = len(tf.config.list_physical_devices("GPU"))
+            if gpu_count > 0:
+                batch_size = 8
+        except Exception:
+            batch_size = 2
+
+        if log_callback is not None:
+            log_callback(f"Using inference batch size {batch_size} for current runtime")
+        return batch_size
+
     def undo(self):
         self.is_dirty = True
         if len(self.undo_stack) == 0:
@@ -329,7 +347,12 @@ class DeepSliceAppState:
         self.use_secondary_model = use_secondary_model
 
         model = self.ensure_model(log_callback=log_callback)
-        inference_batch_size = 1 if progress_callback is not None else 16
+        inference_batch_size = self._recommended_inference_batch_size(
+            progress_callback=progress_callback,
+            log_callback=log_callback,
+        )
+        if progress_callback is not None:
+            progress_callback(0, max(len(self.image_paths), 1), "prepare")
         model.predict(
             image_list=self.image_paths,
             ensemble=ensemble,
@@ -346,9 +369,16 @@ class DeepSliceAppState:
         self.undo_stack = []
         self.redo_stack = []
 
+        progress_total = max(len(self.predictions), 1)
+        if progress_callback is not None:
+            progress_callback(max(1, int(round(progress_total * 0.25))), progress_total, "finalize")
+
         direction = self.detect_indexing_direction()
         self.detected_indexing_direction = direction
         self.selected_indexing_direction = direction
+
+        if progress_callback is not None:
+            progress_callback(max(1, int(round(progress_total * 0.60))), progress_total, "finalize")
 
         predicted_thickness_um = None
         if section_numbers and len(self.predictions) >= 2:
@@ -356,6 +386,9 @@ class DeepSliceAppState:
                 predicted_thickness_um = self.estimate_section_thickness_um()
             except Exception:
                 predicted_thickness_um = None
+
+        if progress_callback is not None:
+            progress_callback(progress_total, progress_total, "finalize")
 
         return {
             "slice_count": len(self.predictions),
