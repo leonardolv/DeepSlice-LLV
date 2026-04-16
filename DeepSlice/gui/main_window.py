@@ -5,7 +5,7 @@ import os
 import subprocess
 import traceback
 from datetime import datetime
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -182,6 +182,96 @@ class FlagListWidget(QListWidget):
                 event.accept()
                 return
         super().keyPressEvent(event)
+
+
+class ToastOverlay(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ToastOverlay")
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setVisible(False)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+
+        self.message_label = QLabel("")
+        self.message_label.setWordWrap(True)
+        layout.addWidget(self.message_label)
+
+        self._dismiss_timer = QTimer(self)
+        self._dismiss_timer.setSingleShot(True)
+        self._dismiss_timer.timeout.connect(self._start_fade_out)
+
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(0.0)
+
+        self._fade_in = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        self._fade_in.setDuration(120)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(1.0)
+        self._fade_in.setEasingCurve(QEasingCurve.OutCubic)
+
+        self._fade_out = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        self._fade_out.setDuration(180)
+        self._fade_out.setStartValue(1.0)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.InCubic)
+        self._fade_out.finished.connect(self.hide)
+
+    def show_message(self, message: str, timeout_ms: int = 3000, level: str = "info"):
+        level_key = str(level).strip().lower()
+        palette = {
+            "info": ("#0D2538", "#69C0FF", "#D8EEFF"),
+            "success": ("#103321", "#2CC784", "#D9FBEA"),
+            "warning": ("#3A2A0A", "#E3A33B", "#FFF2D6"),
+            "error": ("#3A151B", "#D33E56", "#FFE4EA"),
+        }
+        bg, border, text = palette.get(level_key, palette["info"])
+        self.setStyleSheet(
+            "QFrame#ToastOverlay {"
+            f"background: {bg};"
+            f"border: 1px solid {border};"
+            "border-radius: 10px;"
+            "}"
+            "QFrame#ToastOverlay QLabel {"
+            f"color: {text};"
+            "font-weight: 600;"
+            "}"
+        )
+        self.message_label.setText(str(message))
+        self.adjustSize()
+        self._reposition()
+        self.raise_()
+        self.show()
+
+        self._dismiss_timer.stop()
+        self._fade_out.stop()
+        self._fade_in.stop()
+        self._opacity_effect.setOpacity(0.0)
+        self._fade_in.start()
+        self._dismiss_timer.start(max(int(timeout_ms), 500))
+
+    def _start_fade_out(self):
+        if not self.isVisible():
+            return
+        self._fade_in.stop()
+        self._fade_out.stop()
+        self._fade_out.start()
+
+    def _reposition(self):
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        margin = 18
+        max_width = int(parent.width() * 0.45)
+        max_width = max(max_width, 280)
+        self.setMaximumWidth(max_width)
+        self.adjustSize()
+        x_pos = max(margin, parent.width() - self.width() - margin)
+        y_pos = max(margin, parent.height() - self.height() - margin)
+        self.move(x_pos, y_pos)
 
 
 class SliceGraphicsView(QGraphicsView):
@@ -570,6 +660,7 @@ class DeepSliceMainWindow(QMainWindow):
         self._last_error_analysis = None
 
         self.state = DeepSliceAppState()
+        self._apply_startup_preferences_to_state()
         self._session_base_text = "Session: New"
         self.thread_pool = QThreadPool.globalInstance()
         self.active_workers = []
@@ -581,6 +672,8 @@ class DeepSliceMainWindow(QMainWindow):
         self._baseline_predictions = None
         self._curation_modified = False
         self._last_completed_steps = set()
+        self._anchor_depth_targets: Dict[int, float] = {}
+        self._window_title_base = "DeepSlice Desktop"
 
         self._prediction_elapsed_timer = QElapsedTimer()
         self._prediction_clock_timer = QTimer(self)
@@ -600,13 +693,15 @@ class DeepSliceMainWindow(QMainWindow):
         self.app_version = "Unknown"
         self._theme_name = self._load_theme_preference()
 
-        self.setWindowTitle("DeepSlice Desktop")
+        self.setWindowTitle(self._window_title_base)
         self.resize(1600, 980)
         self.setWindowIcon(app_icon or _build_deepslice_icon())
 
         self._notify_startup_progress("Preparing user interface", 12)
 
         self._build_ui()
+        self._restore_window_preferences()
+        self.setAcceptDrops(True)
         self._notify_startup_progress("Wiring shortcuts", 38)
         self._setup_shortcuts()
         self._notify_startup_progress("Applying theme", 55)
@@ -629,6 +724,26 @@ class DeepSliceMainWindow(QMainWindow):
             callback(message, int(np.clip(percent, 0, 100)))
         except Exception:
             pass
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            dropped_paths = []
+            for url in event.mimeData().urls():
+                local_path = url.toLocalFile()
+                if local_path:
+                    dropped_paths.append(local_path)
+            if dropped_paths:
+                self._handle_dropped_paths(dropped_paths)
+                self._show_toast(f"Added {len(dropped_paths)} dropped path(s)", timeout_ms=2500)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
 
     def _track_worker(self, worker: FunctionWorker):
         self.active_workers.append(worker)
@@ -666,6 +781,7 @@ class DeepSliceMainWindow(QMainWindow):
 
         body_split = QSplitter(Qt.Horizontal)
         body_split.setHandleWidth(6)
+        self.body_split = body_split
 
         self.sidebar_container = QWidget()
         sidebar_layout = QVBoxLayout(self.sidebar_container)
@@ -711,6 +827,7 @@ class DeepSliceMainWindow(QMainWindow):
 
         self._assign_button_icons()
         self._apply_detailed_tooltips()
+        self._apply_accessibility_metadata()
 
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
@@ -720,6 +837,9 @@ class DeepSliceMainWindow(QMainWindow):
         self.global_progress.setTextVisible(False)
         self.global_progress.setVisible(False)
         self.status_bar.addPermanentWidget(self.global_progress)
+        self.toast_overlay = ToastOverlay(self)
+
+        self.toast_overlay = ToastOverlay(self)
 
     def _set_global_busy(self, busy: bool):
         self.top_task_progress.setVisible(bool(busy))
@@ -737,6 +857,8 @@ class DeepSliceMainWindow(QMainWindow):
             "save_session_button": "SP_DialogSaveButton",
             "load_session_button": "SP_DialogOpenButton",
             "shortcut_help_button": "SP_MessageBoxInformation",
+            "preferences_button": "SP_FileDialogDetailedView",
+            "about_button": "SP_MessageBoxInformation",
             "error_menu_button": "SP_MessageBoxWarning",
 
             "add_folder_button": "SP_DirOpenIcon",
@@ -772,6 +894,10 @@ class DeepSliceMainWindow(QMainWindow):
             "enforce_spacing_button": "SP_ArrowRight",
             "apply_manual_angles_button": "SP_DialogApplyButton",
             "save_slice_note_button": "SP_DialogApplyButton",
+            "set_anchor_button": "SP_DialogApplyButton",
+            "remove_anchor_button": "SP_DialogResetButton",
+            "apply_anchor_interpolation_button": "SP_ArrowForward",
+            "clear_anchor_button": "SP_TrashIcon",
             "undo_button": "SP_ArrowBack",
             "redo_button": "SP_ArrowForward",
             "zoom_fit_button": "SP_DesktopIcon",
@@ -808,6 +934,8 @@ class DeepSliceMainWindow(QMainWindow):
             "hardware_button": "Show TensorFlow runtime details, GPU detection, CUDA/cuDNN versions, and available VRAM diagnostics.",
             "theme_toggle_button": "Switch between dark and light interface themes. Preference is saved for future launches.",
             "shortcut_help_button": "Open the keyboard shortcut cheat sheet for navigation, session actions, and curation editing.",
+            "preferences_button": "Open persistent user preferences (defaults, paths, theme, and console visibility).",
+            "about_button": "Show application version, citation information, and documentation pointers.",
             "error_menu_button": "Open error tools: view log file, copy latest error report, and run auto-fix suggestions.",
 
             "add_folder_button": "Recursively import supported images from a folder and its subfolders.",
@@ -911,6 +1039,64 @@ class DeepSliceMainWindow(QMainWindow):
                 label = widget.text().strip() or "button"
                 widget.setToolTip(f"Action control: {label}")
 
+    @staticmethod
+    def _infer_accessible_label(widget: QWidget) -> str:
+        object_name = str(widget.objectName() or "").strip()
+        if object_name:
+            return object_name
+
+        if hasattr(widget, "text"):
+            try:
+                text_value = str(widget.text()).strip()
+                if text_value:
+                    return text_value
+            except Exception:
+                pass
+
+        if isinstance(widget, QLineEdit):
+            placeholder = widget.placeholderText().strip()
+            if placeholder:
+                return placeholder
+
+        if isinstance(widget, QComboBox):
+            current = widget.currentText().strip()
+            if current:
+                return current
+
+        return widget.__class__.__name__
+
+    def _apply_accessibility_metadata(self):
+        interactive_types = (
+            QPushButton,
+            QToolButton,
+            QCheckBox,
+            QRadioButton,
+            QLineEdit,
+            QComboBox,
+            QDoubleSpinBox,
+            QSlider,
+            QListWidget,
+            QTableWidget,
+            QTextEdit,
+            QPlainTextEdit,
+        )
+
+        for widget in self.findChildren(interactive_types):
+            if widget.focusPolicy() == Qt.NoFocus:
+                continue
+
+            if not str(widget.accessibleName() or "").strip():
+                widget.setAccessibleName(self._infer_accessible_label(widget))
+
+            if not str(widget.accessibleDescription() or "").strip():
+                tooltip_text = str(widget.toolTip() or "").strip()
+                if tooltip_text:
+                    widget.setAccessibleDescription(tooltip_text)
+                else:
+                    widget.setAccessibleDescription(
+                        f"Interactive {widget.__class__.__name__}"
+                    )
+
     def _toggle_sidebar(self):
         is_visible = self.step_list.isVisible()
         self.step_list.setVisible(not is_visible)
@@ -987,6 +1173,14 @@ class DeepSliceMainWindow(QMainWindow):
         self.shortcut_help_button.setText("Shortcuts")
         self.shortcut_help_button.clicked.connect(self._show_shortcuts_help)
 
+        self.preferences_button = QToolButton()
+        self.preferences_button.setText("Preferences")
+        self.preferences_button.clicked.connect(self._open_preferences_dialog)
+
+        self.about_button = QToolButton()
+        self.about_button.setText("About")
+        self.about_button.clicked.connect(self._show_about_dialog)
+
         self.error_menu_button = QPushButton("Errors")
         self.error_menu = QMenu(self.error_menu_button)
         
@@ -1020,6 +1214,8 @@ class DeepSliceMainWindow(QMainWindow):
         layout.addWidget(self.load_session_button)
         layout.addWidget(self.session_io_spinner)
         layout.addWidget(self.shortcut_help_button)
+        layout.addWidget(self.preferences_button)
+        layout.addWidget(self.about_button)
         layout.addWidget(self.error_menu_button)
         return frame
 
@@ -1030,12 +1226,20 @@ class DeepSliceMainWindow(QMainWindow):
             recent = []
         for i, action in enumerate(self.recent_sessions_actions):
             if i < len(recent):
-                action.setText(recent[i])
+                path = str(recent[i])
+                stamp = ""
+                try:
+                    if os.path.exists(path):
+                        stamp = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    stamp = ""
+                action.setText(f"{path} ({stamp})" if stamp else path)
+                action.setToolTip(path)
                 action.setVisible(True)
                 try: action.triggered.disconnect()
                 except Exception: pass
                 # Lambda with default arg to capture the current path
-                action.triggered.connect(lambda checked=False, path=recent[i]: self._load_session_file(path))
+                action.triggered.connect(lambda checked=False, path=path: self._load_session_file(path))
             else:
                 action.setVisible(False)
 
@@ -1050,6 +1254,178 @@ class DeepSliceMainWindow(QMainWindow):
         recent = recent[:5]
         settings.setValue("recent_sessions", recent)
         self._update_recent_sessions_menu()
+
+    @staticmethod
+    def _setting_to_bool(value) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    def _apply_startup_preferences_to_state(self):
+        settings = QSettings("DeepSlice", "GUI")
+        preferred_species = str(settings.value("default_species", self.state.species)).strip().lower()
+        if preferred_species in {"mouse", "rat"}:
+            try:
+                self.state.set_species(preferred_species)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _coerce_int_list(value) -> Optional[List[int]]:
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            converted: List[int] = []
+            for entry in value:
+                try:
+                    converted.append(int(entry))
+                except Exception:
+                    continue
+            return converted if converted else None
+        return None
+
+    def _restore_window_preferences(self):
+        settings = QSettings("DeepSlice", "GUI")
+        geometry = settings.value("window_geometry", None)
+        if geometry is not None:
+            try:
+                self.restoreGeometry(geometry)
+            except Exception:
+                pass
+
+        body_sizes = self._coerce_int_list(settings.value("body_split_sizes", None))
+        if body_sizes and hasattr(self, "body_split"):
+            self.body_split.setSizes(body_sizes)
+
+        curation_sizes = self._coerce_int_list(settings.value("curation_split_sizes", None))
+        if curation_sizes and hasattr(self, "curation_vertical_split"):
+            self.curation_vertical_split.setSizes(curation_sizes)
+
+        always_console = self._setting_to_bool(settings.value("console_always_visible", False))
+        if always_console and hasattr(self, "console_toggle"):
+            self.console_toggle.setChecked(True)
+
+    def _persist_window_preferences(self):
+        settings = QSettings("DeepSlice", "GUI")
+        settings.setValue("window_geometry", self.saveGeometry())
+        if hasattr(self, "body_split"):
+            settings.setValue("body_split_sizes", self.body_split.sizes())
+        if hasattr(self, "curation_vertical_split"):
+            settings.setValue("curation_split_sizes", self.curation_vertical_split.sizes())
+
+    def _open_preferences_dialog(self):
+        settings = QSettings("DeepSlice", "GUI")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Preferences")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+
+        species_combo = QComboBox()
+        species_combo.addItems(["mouse", "rat"])
+        current_default_species = str(settings.value("default_species", self.state.species)).strip().lower()
+        if current_default_species in {"mouse", "rat"}:
+            species_combo.setCurrentText(current_default_species)
+
+        theme_combo = QComboBox()
+        theme_combo.addItems(["dark", "light"])
+        theme_combo.setCurrentText(self._theme_name)
+
+        output_dir_row = QHBoxLayout()
+        output_dir_edit = QLineEdit(str(settings.value("default_output_directory", "")).strip())
+        output_dir_browse = QPushButton("Browse")
+
+        def _browse_default_output_dir():
+            selected = QFileDialog.getExistingDirectory(dialog, "Default Output Directory")
+            if selected:
+                output_dir_edit.setText(selected)
+
+        output_dir_browse.clicked.connect(_browse_default_output_dir)
+        output_dir_row.addWidget(output_dir_edit)
+        output_dir_row.addWidget(output_dir_browse)
+
+        quicknii_row = QHBoxLayout()
+        quicknii_edit = QLineEdit(str(settings.value("quicknii_path", "")).strip())
+        quicknii_browse = QPushButton("Browse")
+
+        def _browse_default_quicknii_path():
+            selected, _ = QFileDialog.getOpenFileName(
+                dialog,
+                "Default QuickNII Executable",
+                "",
+                "Executables (*.exe);;All Files (*)",
+            )
+            if selected:
+                quicknii_edit.setText(selected)
+
+        quicknii_browse.clicked.connect(_browse_default_quicknii_path)
+        quicknii_row.addWidget(quicknii_edit)
+        quicknii_row.addWidget(quicknii_browse)
+
+        console_always_visible = QCheckBox("Show runtime console by default")
+        console_always_visible.setChecked(
+            self._setting_to_bool(settings.value("console_always_visible", False))
+        )
+
+        form.addRow("Default species for new sessions", species_combo)
+        form.addRow("Theme", theme_combo)
+        form.addRow("Default output directory", output_dir_row)
+        form.addRow("Default QuickNII path", quicknii_row)
+        form.addRow("Console", console_always_visible)
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        selected_species = species_combo.currentText().strip().lower()
+        selected_theme = theme_combo.currentText().strip().lower()
+        default_output_dir = output_dir_edit.text().strip()
+        default_quicknii_path = quicknii_edit.text().strip()
+        always_console = bool(console_always_visible.isChecked())
+
+        settings.setValue("default_species", selected_species)
+        settings.setValue("theme", selected_theme)
+        settings.setValue("default_output_directory", default_output_dir)
+        settings.setValue("quicknii_path", default_quicknii_path)
+        settings.setValue("console_always_visible", always_console)
+
+        self._set_theme(selected_theme)
+        if default_output_dir and hasattr(self, "output_dir_edit"):
+            self.output_dir_edit.setText(default_output_dir)
+        if hasattr(self, "quicknii_path_edit"):
+            self.quicknii_path_edit.setText(default_quicknii_path)
+        if hasattr(self, "console_toggle"):
+            self.console_toggle.setChecked(always_console)
+
+        # Keep current session stable: only apply species change immediately when no predictions exist.
+        if self.state.predictions is None and selected_species in {"mouse", "rat"}:
+            self.state.set_species(selected_species)
+            self.mouse_radio.setChecked(selected_species == "mouse")
+            self.rat_radio.setChecked(selected_species == "rat")
+            self._refresh_atlas_volume_options()
+            self._update_processing_estimate()
+
+        self._show_toast("Preferences updated", timeout_ms=3000)
+
+    def _show_about_dialog(self):
+        text = (
+            f"DeepSlice Desktop v{self.app_version}\n\n"
+            "Citation:\n"
+            "- Carey et al., Nature Communications (2023)\n"
+            "  https://www.nature.com/articles/s41467-023-41645-4\n"
+            "- Wang et al., Cell (2020) for Allen CCFv3 mouse atlas\n"
+            "- Kleven et al., Nature Methods (2023) for Waxholm rat atlas\n\n"
+            "License: See LICENSE file in this repository.\n"
+            "Documentation: docs/gui_help.html or built docs/index.html"
+        )
+        QMessageBox.information(self, "About DeepSlice", text)
 
 
     def _setup_shortcuts(self):
@@ -1079,6 +1455,10 @@ class DeepSliceMainWindow(QMainWindow):
         load_shortcut.activated.connect(self._load_session_or_quint)
         self._shortcuts.append(load_shortcut)
 
+        export_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
+        export_shortcut.activated.connect(lambda: self.step_list.setCurrentRow(4))
+        self._shortcuts.append(export_shortcut)
+
         f1_shortcut = QShortcut(QKeySequence("F1"), self)
         f1_shortcut.activated.connect(self._open_context_help)
         self._shortcuts.append(f1_shortcut)
@@ -1098,6 +1478,7 @@ class DeepSliceMainWindow(QMainWindow):
             "Ctrl+N : New session\n"
             "Ctrl+S : Save session\n"
             "Ctrl+O : Load session\n"
+            "Ctrl+E : Jump to Export page\n"
             "Ctrl+Z : Undo curation changes\n"
             "Ctrl+Y : Redo curation changes\n"
             "Ctrl+/ or Ctrl+? : Show shortcuts\n"
@@ -1132,7 +1513,7 @@ class DeepSliceMainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(docs_index))
             return
 
-        QMessageBox.information(self, "Help", "Documentation file not found in this workspace.")
+        self._show_toast("Documentation file not found in this workspace", timeout_ms=3200, level="warning")
 
     def _load_theme_preference(self) -> str:
         settings = QSettings("DeepSlice", "GUI")
@@ -1194,8 +1575,15 @@ class DeepSliceMainWindow(QMainWindow):
         )
         QMessageBox.information(self, "What's New", notes)
 
-    def _show_toast(self, text: str, timeout_ms: int = 3500):
+    def _show_toast(self, text: str, timeout_ms: int = 3500, level: str = "info"):
         self.status_bar.showMessage(text, int(timeout_ms))
+        if hasattr(self, "toast_overlay"):
+            self.toast_overlay.show_message(text, timeout_ms=int(timeout_ms), level=level)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "toast_overlay"):
+            self.toast_overlay._reposition()
         
     def _reset_session(self):
         if getattr(self.state, "is_dirty", False):
@@ -1207,8 +1595,10 @@ class DeepSliceMainWindow(QMainWindow):
             if reply == QMessageBox.No:
                 return
         self.state = DeepSliceAppState()
+        self._apply_startup_preferences_to_state()
         self._baseline_predictions = None
         self._curation_modified = False
+        self._anchor_depth_targets = {}
         self._session_base_text = "Session: New"
         self._apply_state_to_widgets()
         self._update_session_status()
@@ -1220,7 +1610,7 @@ class DeepSliceMainWindow(QMainWindow):
         if is_dirty:
             text = f"*{text}"
         self.session_status_label.setText(text)
-        self.setWindowTitle(f"DeepSlice Desktop{' *' if is_dirty else ''}")
+        self.setWindowTitle(f"{self._window_title_base}{' *' if is_dirty else ''}")
 
     def closeEvent(self, event):
         if getattr(self.state, "is_dirty", False):
@@ -1231,10 +1621,12 @@ class DeepSliceMainWindow(QMainWindow):
                 QMessageBox.No
             )
             if reply == QMessageBox.Yes:
+                self._persist_window_preferences()
                 event.accept()
             else:
                 event.ignore()
         else:
+            self._persist_window_preferences()
             event.accept()
             
     def _record_error(self, context: str, error_text: str):
@@ -1289,19 +1681,15 @@ class DeepSliceMainWindow(QMainWindow):
         QApplication.clipboard().setText(report)
 
         if show_message:
-            QMessageBox.information(
-                self,
-                "Error Report Copied",
-                "Copied an error report to clipboard. You can paste it into chat or an issue report.",
+            self._show_toast(
+                "Error report copied to clipboard",
+                timeout_ms=2500,
+                level="success",
             )
 
     def _try_auto_fix_last_error(self):
         if not self._last_error_text:
-            QMessageBox.information(
-                self,
-                "Auto-Fix",
-                "No previous error is available for auto-fix.",
-            )
+            self._show_toast("No previous error available for auto-fix", timeout_ms=2600, level="warning")
             return
 
         self._start_auto_fix(
@@ -1312,11 +1700,10 @@ class DeepSliceMainWindow(QMainWindow):
     def _start_auto_fix(self, context: str, error_text: str):
         analysis = self._error_autofixer.analyze_error(context, error_text)
         if not analysis.get("auto_fix_available", False):
-            QMessageBox.information(
-                self,
-                "Auto-Fix",
-                self._error_autofixer.format_analysis(analysis),
-            )
+            details = self._error_autofixer.format_analysis(analysis)
+            if details:
+                self._append_console_log(f"[AUTO-FIX] {details}")
+            self._show_toast("No automatic fix is available", timeout_ms=3200, level="info")
             return
 
         self._append_console_log("Starting automatic error-fix attempt...")
@@ -1341,7 +1728,7 @@ class DeepSliceMainWindow(QMainWindow):
 
         if bool(result.get("succeeded", False)):
             self._append_console_log(f"[AUTO-FIX] {summary}")
-            QMessageBox.information(self, "Auto-Fix Succeeded", combined)
+            self._show_toast("Auto-fix succeeded", timeout_ms=3200, level="success")
             return
 
         if bool(result.get("attempted", False)):
@@ -1353,7 +1740,7 @@ class DeepSliceMainWindow(QMainWindow):
             )
             return
 
-        QMessageBox.information(self, "Auto-Fix", combined)
+        self._show_toast("Auto-fix completed with no changes", timeout_ms=3000, level="info")
 
     def _on_auto_fix_error(self, error_text: str):
         self.auto_fix_button.setEnabled(bool(self._last_error_analysis and self._last_error_analysis.get("auto_fix_available", False)))
@@ -1371,11 +1758,7 @@ class DeepSliceMainWindow(QMainWindow):
             self.error_menu_button.setStyleSheet("")
 
         if not os.path.exists(self.error_log_path):
-            QMessageBox.information(
-                self,
-                "Open Error Log",
-                f"No error log file exists yet:\n{self.error_log_path}",
-            )
+            self._show_toast("No error log file exists yet", timeout_ms=2800, level="warning")
             return
 
         try:
@@ -1623,7 +2006,7 @@ class DeepSliceMainWindow(QMainWindow):
     def _show_configuration_validation(self):
         errors, warnings = self._validate_before_prediction()
         if len(errors) == 0 and len(warnings) == 0:
-            QMessageBox.information(self, "Validation", "Configuration looks good.")
+            self._show_toast("Configuration looks good", timeout_ms=2500, level="success")
             return
         lines = []
         if errors:
@@ -2187,6 +2570,49 @@ class DeepSliceMainWindow(QMainWindow):
         controls_layout.addWidget(self.undo_button, 6, 0)
         controls_layout.addWidget(self.redo_button, 6, 1)
 
+        anchor_group = QGroupBox("Anchor Alignment")
+        anchor_layout = QVBoxLayout(anchor_group)
+        self.anchor_summary_label = QLabel(
+            "Set 3 or more known slices as anchors, then interpolate all other AP depths between anchors."
+        )
+        self.anchor_summary_label.setWordWrap(True)
+
+        self.anchor_depth_spin = QDoubleSpinBox()
+        self.anchor_depth_spin.setRange(-5000.0, 5000.0)
+        self.anchor_depth_spin.setDecimals(2)
+        self.anchor_depth_spin.setSingleStep(1.0)
+        self.anchor_depth_spin.setSuffix(" AP")
+
+        self.set_anchor_button = QToolButton()
+        self.set_anchor_button.setText("Set/Update Anchor")
+        self.set_anchor_button.clicked.connect(self._set_anchor_for_current_slice)
+
+        self.remove_anchor_button = QToolButton()
+        self.remove_anchor_button.setText("Remove Anchor")
+        self.remove_anchor_button.clicked.connect(self._remove_anchor_for_current_slice)
+
+        self.apply_anchor_interpolation_button = QPushButton("Distribute Between Anchors")
+        self.apply_anchor_interpolation_button.clicked.connect(self._apply_anchor_interpolation)
+
+        self.clear_anchor_button = QToolButton()
+        self.clear_anchor_button.setText("Clear")
+        self.clear_anchor_button.clicked.connect(self._clear_anchor_points)
+
+        anchor_action_row = QHBoxLayout()
+        anchor_action_row.addWidget(self.set_anchor_button)
+        anchor_action_row.addWidget(self.remove_anchor_button)
+        anchor_action_row.addWidget(self.clear_anchor_button)
+
+        self.anchor_list = QListWidget()
+        self.anchor_list.setMaximumHeight(110)
+
+        anchor_layout.addWidget(self.anchor_summary_label)
+        anchor_layout.addWidget(QLabel("Target AP depth for selected slice"))
+        anchor_layout.addWidget(self.anchor_depth_spin)
+        anchor_layout.addLayout(anchor_action_row)
+        anchor_layout.addWidget(self.anchor_list)
+        anchor_layout.addWidget(self.apply_anchor_interpolation_button)
+
         left_layout.addWidget(self.slice_flag_list, stretch=2)
         reorder_row = QHBoxLayout()
         reorder_row.addWidget(self.move_slice_up_button)
@@ -2199,6 +2625,7 @@ class DeepSliceMainWindow(QMainWindow):
         left_layout.addWidget(self.detect_outliers_button)
         left_layout.addWidget(self.reset_flags_button)
         left_layout.addWidget(controls_group, stretch=1)
+        left_layout.addWidget(anchor_group)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
@@ -2266,11 +2693,12 @@ class DeepSliceMainWindow(QMainWindow):
         self.atlas_flip_y_checkbox.toggled.connect(self._on_atlas_transform_changed)
 
         self.atlas_rotate_combo = QComboBox()
-        self.atlas_rotate_combo.addItem("Rotate: Auto", "auto")
         self.atlas_rotate_combo.addItem("Rotate: 0 deg", 0)
+        self.atlas_rotate_combo.addItem("Rotate: Auto", "auto")
         self.atlas_rotate_combo.addItem("Rotate: 90 deg CW", -1)
         self.atlas_rotate_combo.addItem("Rotate: 180 deg", 2)
         self.atlas_rotate_combo.addItem("Rotate: 270 deg CW", 1)
+        self.atlas_rotate_combo.setCurrentIndex(0)
         self.atlas_rotate_combo.currentIndexChanged.connect(self._on_atlas_transform_changed)
 
         self.atlas_scale_slider = QSlider(Qt.Horizontal)
@@ -2371,6 +2799,7 @@ class DeepSliceMainWindow(QMainWindow):
         root = QVBoxLayout(page)
         root.addWidget(split)
         self._refresh_atlas_volume_options()
+        self._update_anchor_depth_range()
         return page
 
     def _build_export_page(self) -> QWidget:
@@ -2631,6 +3060,16 @@ class DeepSliceMainWindow(QMainWindow):
                 background: #2A79FF;
                 border-radius: 6px;
             }
+            QPushButton:focus, QToolButton:focus,
+            QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
+            QListWidget:focus, QTableWidget:focus, QComboBox:focus,
+            QDoubleSpinBox:focus, QSlider:focus {
+                border: 2px solid #69C0FF;
+                outline: none;
+            }
+            QCheckBox:focus, QRadioButton:focus {
+                outline: 2px solid #69C0FF;
+            }
         """
 
         light_theme = """
@@ -2751,6 +3190,16 @@ class DeepSliceMainWindow(QMainWindow):
             QProgressBar::chunk {
                 background: #2F7BCE;
                 border-radius: 6px;
+            }
+            QPushButton:focus, QToolButton:focus,
+            QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
+            QListWidget:focus, QTableWidget:focus, QComboBox:focus,
+            QDoubleSpinBox:focus, QSlider:focus {
+                border: 2px solid #1F6CB8;
+                outline: none;
+            }
+            QCheckBox:focus, QRadioButton:focus {
+                outline: 2px solid #1F6CB8;
             }
         """
 
@@ -3080,6 +3529,7 @@ class DeepSliceMainWindow(QMainWindow):
         species = "mouse" if self.mouse_radio.isChecked() else "rat"
         self.state.set_species(species)
         self._refresh_atlas_volume_options()
+        self._update_anchor_depth_range()
         self._update_processing_estimate()
         self._update_run_button_state()
 
@@ -3198,6 +3648,7 @@ class DeepSliceMainWindow(QMainWindow):
         self._run_button_dots = 0
         self._run_animation_timer.start()
         self.run_alignment_button.setText("Running")
+        self.setWindowTitle(f"{self._window_title_base} - Running (0%)")
 
         options = {
             "section_numbers": self.state.section_numbers,
@@ -3280,8 +3731,10 @@ class DeepSliceMainWindow(QMainWindow):
             (phase_index - 1) * self._prediction_total + self._prediction_completed,
             overall_total,
         )
+        overall_percent = int(round((overall_completed / max(overall_total, 1)) * 100.0))
         self.prediction_progress_bar.setRange(0, max(overall_total, 1))
         self.prediction_progress_bar.setValue(overall_completed)
+        self.setWindowTitle(f"{self._window_title_base} - Running ({overall_percent}%)")
         self._update_prediction_timing()
         self._update_prediction_realtime_views(completed, total, phase)
 
@@ -3387,37 +3840,15 @@ class DeepSliceMainWindow(QMainWindow):
         self._prediction_clock_timer.stop()
         self._run_animation_timer.stop()
         self.run_alignment_button.setText("Run Alignment")
+        self._update_session_status()
 
-    def _on_prediction_error(self, error_text: str):
-        self._stop_prediction_activity()
-        self._prediction_cancel_requested = False
-        self.run_alignment_button.setEnabled(True)
-        if hasattr(self, "cancel_alignment_button"):
-            self.cancel_alignment_button.setEnabled(False)
-
-        if "cancelled" in str(error_text).lower():
-            self._show_toast("Alignment cancelled", timeout_ms=3500)
-            self._append_console_log("[SYSTEM] Alignment cancelled by user")
-            self.prediction_phase_label.setText("Phase: cancelled")
-            self.prediction_eta_label.setText("Remaining: --:--")
-            return
-
-        self._show_logged_error(
-            title="Prediction Failed",
-            context="Alignment prediction task failed",
-            error_text=error_text,
-            icon=QMessageBox.Critical,
-        )
-
-    def _on_prediction_finished(self, result: dict):
-        self._stop_prediction_activity()
-        self._prediction_cancel_requested = False
-        self.run_alignment_button.setEnabled(True)
-        if hasattr(self, "cancel_alignment_button"):
-            self.cancel_alignment_button.setEnabled(False)
+    def _finalize_prediction_result(self, result: dict, recovered_partial: bool = False):
         self._curation_modified = False
         self._baseline_predictions = self.state.predictions.copy() if self.state.predictions is not None else None
-        self._session_base_text = f"Session: Predicted {result['slice_count']} slices"
+        if recovered_partial:
+            self._session_base_text = f"Session: Partial recovery ({result['slice_count']} slices)"
+        else:
+            self._session_base_text = f"Session: Predicted {result['slice_count']} slices"
         self._update_session_status()
 
         direction = result.get("direction")
@@ -3447,12 +3878,89 @@ class DeepSliceMainWindow(QMainWindow):
         mean_conf = "-"
         if self._linearity_payload is not None and "confidence" in self._linearity_payload:
             mean_conf = f"{float(np.mean(self._linearity_payload['confidence'])):.2f}"
+
+        if recovered_partial:
+            reason = str(result.get("partial_reason", "secondary ensemble pass failed")).strip()
+            summary_text = (
+                f"Recovered partial result in {self._format_duration(elapsed_seconds)} - "
+                f"{int(result['slice_count'])} slices - Mean confidence: {mean_conf}"
+            )
+            self._show_toast(summary_text, timeout_ms=7000, level="warning")
+            self._append_console_log("[WARNING] " + reason)
+            self._append_console_log("[SYSTEM] " + summary_text)
+            return
+
         summary_text = (
             f"Completed in {self._format_duration(elapsed_seconds)} - "
             f"{int(result['slice_count'])} slices processed - Mean confidence: {mean_conf}"
         )
-        self._show_toast(summary_text, timeout_ms=6000)
+        self._show_toast(summary_text, timeout_ms=6000, level="success")
         self._append_console_log("[SYSTEM] " + summary_text)
+
+    def _on_prediction_error(self, error_text: str):
+        self._stop_prediction_activity()
+        self._prediction_cancel_requested = False
+        self.run_alignment_button.setEnabled(True)
+        if hasattr(self, "cancel_alignment_button"):
+            self.cancel_alignment_button.setEnabled(False)
+
+        if "cancelled" in str(error_text).lower():
+            self._show_toast("Alignment cancelled", timeout_ms=3500)
+            self._append_console_log("[SYSTEM] Alignment cancelled by user")
+            self.prediction_phase_label.setText("Phase: cancelled")
+            self.prediction_eta_label.setText("Remaining: --:--")
+            return
+
+        if "PARTIAL_PREDICTIONS_AVAILABLE" in str(error_text):
+            if self.state.has_partial_prediction_candidate():
+                reason = self.state.partial_prediction_reason().splitlines()[0].strip()
+                if len(reason) > 220:
+                    reason = reason[:217] + "..."
+                reply = QMessageBox.question(
+                    self,
+                    "Recover Partial Result",
+                    (
+                        "The secondary ensemble pass failed, but primary-model predictions are available.\n\n"
+                        f"Reason: {reason}\n\n"
+                        "Use the partial result now?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if reply == QMessageBox.Yes:
+                    try:
+                        result = self.state.use_partial_prediction_candidate(log_callback=self._append_console_log)
+                    except Exception as exc:
+                        self._show_logged_exception(
+                            title="Partial Recovery Failed",
+                            context="Could not adopt partial primary-model predictions",
+                            exc=exc,
+                            icon=QMessageBox.Critical,
+                        )
+                        return
+                    self._finalize_prediction_result(result, recovered_partial=True)
+                    return
+
+                self.state.clear_partial_prediction_candidate()
+                self._show_toast("Partial result discarded", timeout_ms=2800, level="info")
+                return
+
+            error_text = str(error_text).replace("PARTIAL_PREDICTIONS_AVAILABLE:", "").strip()
+
+        self._show_logged_error(
+            title="Prediction Failed",
+            context="Alignment prediction task failed",
+            error_text=error_text,
+            icon=QMessageBox.Critical,
+        )
+
+    def _on_prediction_finished(self, result: dict):
+        self._stop_prediction_activity()
+        self._prediction_cancel_requested = False
+        self.run_alignment_button.setEnabled(True)
+        if hasattr(self, "cancel_alignment_button"):
+            self.cancel_alignment_button.setEnabled(False)
+        self._finalize_prediction_result(result, recovered_partial=False)
 
     def _accept_predicted_thickness(self):
         label_text = self.predicted_thickness_label.text()
@@ -3652,6 +4160,205 @@ class DeepSliceMainWindow(QMainWindow):
             if row in {0, count - 1}:
                 break
 
+    def _selected_prediction_row_from_list(self) -> Optional[int]:
+        if not hasattr(self, "slice_flag_list"):
+            return None
+        row = self.slice_flag_list.currentRow()
+        if row < 0:
+            return None
+        item = self.slice_flag_list.item(row)
+        if item is None:
+            return None
+        source_index = item.data(Qt.UserRole)
+        if source_index is None:
+            source_index = row
+        try:
+            return int(source_index)
+        except Exception:
+            return row
+
+    def _list_row_for_prediction_index(self, source_index: int) -> int:
+        if not hasattr(self, "slice_flag_list"):
+            return -1
+        for row in range(self.slice_flag_list.count()):
+            item = self.slice_flag_list.item(row)
+            if item is None:
+                continue
+            candidate = item.data(Qt.UserRole)
+            if candidate is None:
+                candidate = row
+            try:
+                if int(candidate) == int(source_index):
+                    return row
+            except Exception:
+                continue
+        return -1
+
+    def _refresh_anchor_list(self):
+        if not hasattr(self, "anchor_list"):
+            return
+        self.anchor_list.clear()
+
+        if self.state.predictions is None:
+            self._anchor_depth_targets = {}
+            return
+
+        n_rows = len(self.state.predictions)
+        cleaned: Dict[int, float] = {}
+        for row_idx, target_depth in self._anchor_depth_targets.items():
+            try:
+                index = int(row_idx)
+                depth = float(target_depth)
+            except Exception:
+                continue
+            if 0 <= index < n_rows and np.isfinite(depth):
+                cleaned[index] = depth
+        self._anchor_depth_targets = cleaned
+
+        for row_idx in sorted(self._anchor_depth_targets.keys()):
+            row = self.state.predictions.iloc[row_idx]
+            nr = row["nr"] if "nr" in self.state.predictions.columns else row_idx + 1
+            filename = os.path.basename(str(row["Filenames"]))
+            target_depth = self._anchor_depth_targets[row_idx]
+            item = QListWidgetItem(f"#{nr} | AP {target_depth:.2f} | {filename}")
+            item.setData(Qt.UserRole, row_idx)
+            self.anchor_list.addItem(item)
+
+    def _update_anchor_depth_range(self):
+        if not hasattr(self, "anchor_depth_spin"):
+            return
+        try:
+            min_depth, max_depth = metadata_loader.get_species_depth_range(self.state.species)
+            min_depth = float(min_depth)
+            max_depth = float(max_depth)
+            padding = max(5.0, 0.1 * abs(max_depth - min_depth))
+            self.anchor_depth_spin.setRange(min_depth - padding, max_depth + padding)
+        except Exception:
+            self.anchor_depth_spin.setRange(-5000.0, 5000.0)
+
+    def _sync_anchor_editor_with_selection(self, source_row_index: int):
+        if not hasattr(self, "anchor_depth_spin"):
+            return
+        if source_row_index < 0:
+            return
+
+        if source_row_index in self._anchor_depth_targets:
+            value = float(self._anchor_depth_targets[source_row_index])
+        else:
+            value = float(self._depth_for_prediction_index(source_row_index))
+
+        self.anchor_depth_spin.blockSignals(True)
+        self.anchor_depth_spin.setValue(value)
+        self.anchor_depth_spin.blockSignals(False)
+
+    def _set_anchor_for_current_slice(self):
+        if self.state.predictions is None:
+            return
+        source_index = self._selected_prediction_row_from_list()
+        if source_index is None or source_index < 0 or source_index >= len(self.state.predictions):
+            return
+
+        self._anchor_depth_targets[source_index] = float(self.anchor_depth_spin.value())
+        self._refresh_anchor_list()
+        self._show_toast(f"Anchor set for slice {source_index + 1}", timeout_ms=2200)
+
+    def _remove_anchor_for_current_slice(self):
+        source_index = self._selected_prediction_row_from_list()
+        if source_index is None:
+            return
+        if source_index in self._anchor_depth_targets:
+            self._anchor_depth_targets.pop(source_index, None)
+            self._refresh_anchor_list()
+            self._show_toast(f"Anchor removed for slice {source_index + 1}", timeout_ms=2200)
+
+    def _clear_anchor_points(self):
+        if len(self._anchor_depth_targets) == 0:
+            return
+        self._anchor_depth_targets = {}
+        self._refresh_anchor_list()
+        self._show_toast("Anchor set cleared", timeout_ms=2200)
+
+    def _apply_anchor_interpolation(self):
+        if self.state.predictions is None:
+            return
+        if len(self._anchor_depth_targets) < 2:
+            self._show_toast(
+                "Set at least two anchors before distributing AP depths",
+                timeout_ms=3200,
+                level="warning",
+            )
+            return
+
+        n_rows = len(self.state.predictions)
+        anchors = sorted(
+            [
+                (int(index), float(depth))
+                for index, depth in self._anchor_depth_targets.items()
+                if 0 <= int(index) < n_rows
+            ],
+            key=lambda pair: pair[0],
+        )
+        if len(anchors) < 2:
+            self._show_toast(
+                "Anchors are out of range for current predictions",
+                timeout_ms=3200,
+                level="warning",
+            )
+            return
+
+        payload = self.state.linearity_payload()
+        current_depths = np.asarray(payload["y"], dtype=float)
+        if current_depths.shape[0] != n_rows:
+            QMessageBox.warning(self, "Anchor Alignment", "Depth payload does not match prediction table length.")
+            return
+
+        target_depths = np.asarray(current_depths, dtype=float).copy()
+
+        first_index, first_target = anchors[0]
+        first_shift = first_target - current_depths[first_index]
+        target_depths[first_index] = first_target
+        if first_index > 0:
+            target_depths[:first_index] = current_depths[:first_index] + first_shift
+
+        for (start_index, start_depth), (end_index, end_depth) in zip(anchors[:-1], anchors[1:]):
+            if end_index <= start_index:
+                continue
+            segment_x = np.arange(start_index, end_index + 1, dtype=float)
+            alpha = (segment_x - float(start_index)) / float(end_index - start_index)
+            target_depths[start_index : end_index + 1] = (
+                (1.0 - alpha) * float(start_depth)
+                + (alpha * float(end_depth))
+            )
+
+        last_index, last_target = anchors[-1]
+        last_shift = last_target - current_depths[last_index]
+        target_depths[last_index] = last_target
+        if last_index + 1 < n_rows:
+            target_depths[last_index + 1 :] = current_depths[last_index + 1 :] + last_shift
+
+        delta_depths = target_depths - current_depths
+        if not np.all(np.isfinite(delta_depths)):
+            QMessageBox.warning(self, "Anchor Alignment", "Computed depth correction contains invalid values.")
+            return
+
+        self.state.snapshot_predictions()
+        self.state.predictions["oy"] = self.state.predictions["oy"].astype(float) + delta_depths
+        self.state.is_dirty = True
+        self.state._sync_model_predictions()
+
+        self._mark_curation_modified()
+        self._refresh_curation_views()
+
+        focused_index = anchors[0][0]
+        target_row = self._list_row_for_prediction_index(focused_index)
+        if target_row >= 0:
+            self.slice_flag_list.setCurrentRow(target_row)
+
+        self._show_toast(
+            f"Anchor interpolation applied using {len(anchors)} anchors",
+            timeout_ms=3500,
+        )
+
     def _toggle_confidence_panel(self, expanded: bool):
         if hasattr(self, "confidence_panel"):
             self.confidence_panel.setVisible(bool(expanded))
@@ -3757,6 +4464,44 @@ class DeepSliceMainWindow(QMainWindow):
         self._render_histology_preview(row)
         self._render_confidence_overlay_preview(row)
 
+    @staticmethod
+    def _mask_bbox(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+        ys, xs = np.nonzero(mask)
+        if ys.size < 16 or xs.size < 16:
+            return None
+        return int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1)
+
+    @staticmethod
+    def _bbox_center(bbox: Tuple[int, int, int, int]) -> Tuple[float, float]:
+        x0, y0, x1, y1 = bbox
+        return (0.5 * (x0 + x1), 0.5 * (y0 + y1))
+
+    def _best_bbox_from_masks(
+        self,
+        masks: List[np.ndarray],
+        frame_shape: Tuple[int, int],
+    ) -> Optional[Tuple[int, int, int, int]]:
+        frame_h, frame_w = int(frame_shape[0]), int(frame_shape[1])
+        frame_area = float(max(frame_h * frame_w, 1))
+        best_bbox = None
+        best_score = float("inf")
+
+        for mask in masks:
+            bbox = self._mask_bbox(mask)
+            if bbox is None:
+                continue
+            x0, y0, x1, y1 = bbox
+            area_ratio = ((x1 - x0) * (y1 - y0)) / frame_area
+            if area_ratio < 0.01 or area_ratio > 0.98:
+                continue
+            # Favor compact tissue-like regions around one-third to one-half of frame.
+            score = abs(area_ratio - 0.38)
+            if score < best_score:
+                best_score = score
+                best_bbox = bbox
+
+        return best_bbox
+
     def _fit_atlas_slice_to_histology(
         self,
         histology_path: Optional[str],
@@ -3810,8 +4555,32 @@ class DeepSliceMainWindow(QMainWindow):
         if src_h <= 0 or src_w <= 0:
             return source
 
-        # Fill the histology frame while keeping atlas aspect ratio, then center-crop.
-        base_scale = max(target_width / float(src_w), target_height / float(src_h))
+        hist_masks = [
+            hist_gray <= np.percentile(hist_gray, 80.0),
+            hist_gray <= np.percentile(hist_gray, 88.0),
+            hist_gray >= np.percentile(hist_gray, 25.0),
+        ]
+        hist_bbox = self._best_bbox_from_masks(hist_masks, (target_height, target_width))
+
+        atlas_float = source.astype(np.float32)
+        atlas_masks = [
+            atlas_float >= np.percentile(atlas_float, 55.0),
+            atlas_float >= np.percentile(atlas_float, 65.0),
+            atlas_float > 0,
+        ]
+        atlas_bbox = self._best_bbox_from_masks(atlas_masks, (src_h, src_w))
+
+        if hist_bbox is not None and atlas_bbox is not None:
+            hist_bw = max(hist_bbox[2] - hist_bbox[0], 1)
+            hist_bh = max(hist_bbox[3] - hist_bbox[1], 1)
+            atlas_bw = max(atlas_bbox[2] - atlas_bbox[0], 1)
+            atlas_bh = max(atlas_bbox[3] - atlas_bbox[1], 1)
+            base_scale = min(hist_bw / float(atlas_bw), hist_bh / float(atlas_bh))
+        else:
+            # Fallback: contain-fit atlas in full frame without forced crop.
+            base_scale = min(target_width / float(src_w), target_height / float(src_h))
+
+        base_scale = max(base_scale, 1e-3)
         manual_scale = 1.0
         if hasattr(self, "atlas_scale_slider"):
             manual_scale = max(self.atlas_scale_slider.value(), 1) / 100.0
@@ -3824,39 +4593,46 @@ class DeepSliceMainWindow(QMainWindow):
         )
         resized_array = np.array(resized, dtype=np.uint8)
 
-        hist_center_x = target_width / 2.0
-        hist_center_y = target_height / 2.0
-        tissue_threshold = float(np.percentile(hist_gray, 82.0))
-        tissue_mask = hist_gray < tissue_threshold
-        if np.count_nonzero(tissue_mask) > 200:
-            tissue_y, tissue_x = np.nonzero(tissue_mask)
-            hist_center_x = float(np.mean(tissue_x))
-            hist_center_y = float(np.mean(tissue_y))
+        resized_masks = [
+            resized_array >= np.percentile(resized_array, 55.0),
+            resized_array >= np.percentile(resized_array, 65.0),
+            resized_array > 0,
+        ]
+        atlas_resized_bbox = self._best_bbox_from_masks(resized_masks, (resized_h, resized_w))
 
-        atlas_center_x = resized_w / 2.0
-        atlas_center_y = resized_h / 2.0
-        atlas_threshold = float(np.percentile(resized_array, 65.0))
-        atlas_mask = resized_array > atlas_threshold
-        if np.count_nonzero(atlas_mask) > 200:
-            atlas_y, atlas_x = np.nonzero(atlas_mask)
-            atlas_center_x = float(np.mean(atlas_x))
-            atlas_center_y = float(np.mean(atlas_y))
+        hist_center_x, hist_center_y = target_width / 2.0, target_height / 2.0
+        if hist_bbox is not None:
+            hist_center_x, hist_center_y = self._bbox_center(hist_bbox)
+
+        atlas_center_x, atlas_center_y = resized_w / 2.0, resized_h / 2.0
+        if atlas_resized_bbox is not None:
+            atlas_center_x, atlas_center_y = self._bbox_center(atlas_resized_bbox)
 
         offset_x_pct = self.atlas_offset_x_slider.value() if hasattr(self, "atlas_offset_x_slider") else 0
         offset_y_pct = self.atlas_offset_y_slider.value() if hasattr(self, "atlas_offset_y_slider") else 0
-        x0 = int(round(atlas_center_x - hist_center_x + (offset_x_pct / 100.0) * target_width))
-        y0 = int(round(atlas_center_y - hist_center_y + (offset_y_pct / 100.0) * target_height))
-        x0 = int(np.clip(x0, 0, max(resized_w - target_width, 0)))
-        y0 = int(np.clip(y0, 0, max(resized_h - target_height, 0)))
-        cropped = resized_array[y0 : y0 + target_height, x0 : x0 + target_width]
+        offset_x_px = (offset_x_pct / 100.0) * target_width
+        offset_y_px = (offset_y_pct / 100.0) * target_height
 
-        if cropped.shape != (target_height, target_width):
-            padded = np.zeros((target_height, target_width), dtype=np.uint8)
-            copy_h = min(target_height, cropped.shape[0])
-            copy_w = min(target_width, cropped.shape[1])
-            padded[:copy_h, :copy_w] = cropped[:copy_h, :copy_w]
-            return padded
-        return cropped
+        place_x = int(round(hist_center_x - atlas_center_x + offset_x_px))
+        place_y = int(round(hist_center_y - atlas_center_y + offset_y_px))
+
+        canvas = np.zeros((target_height, target_width), dtype=np.uint8)
+
+        src_x0 = max(0, -place_x)
+        src_y0 = max(0, -place_y)
+        dst_x0 = max(0, place_x)
+        dst_y0 = max(0, place_y)
+
+        copy_w = min(target_width - dst_x0, resized_w - src_x0)
+        copy_h = min(target_height - dst_y0, resized_h - src_y0)
+
+        if copy_w > 0 and copy_h > 0:
+            canvas[dst_y0 : dst_y0 + copy_h, dst_x0 : dst_x0 + copy_w] = resized_array[
+                src_y0 : src_y0 + copy_h,
+                src_x0 : src_x0 + copy_w,
+            ]
+
+        return canvas
 
     def _build_blended_overlay_image(
         self,
@@ -3928,8 +4704,25 @@ class DeepSliceMainWindow(QMainWindow):
         overlay = [
             f"Slice: {filename}",
             f"Composite confidence: {confidence:.2f} ({confidence_level})",
-            f"Oy: {row['oy']:.2f}",
         ]
+
+        ap_depth_vox = float(row["oy"])
+        if self._linearity_payload is not None and row_index < len(self._linearity_payload["y"]):
+            ap_depth_vox = float(self._linearity_payload["y"][row_index])
+
+        voxel_um = None
+        try:
+            voxel_um = float(self.state._config["target_volumes"][self.state.species]["voxel_size_microns"])
+        except Exception:
+            voxel_um = None
+
+        if voxel_um is not None and np.isfinite(ap_depth_vox):
+            ap_mm = (ap_depth_vox * voxel_um) / 1000.0
+            overlay.append(f"AP: {ap_depth_vox:.2f} vox ({ap_mm:.3f} mm)")
+        else:
+            overlay.append(f"AP: {ap_depth_vox:.2f} vox")
+
+        overlay.append(f"Oy: {row['oy']:.2f}")
 
         if (
             self.before_after_toggle.isChecked()
@@ -4097,6 +4890,7 @@ class DeepSliceMainWindow(QMainWindow):
             self.linearity_canvas.draw_idle()
             self.hist_canvas.draw_idle()
             self._update_undo_redo_labels()
+            self._refresh_anchor_list()
             return
 
         payload = self.state.linearity_payload()
@@ -4215,6 +5009,7 @@ class DeepSliceMainWindow(QMainWindow):
         self.linearity_canvas.draw_idle()
         self.hist_canvas.draw_idle()
         self._update_undo_redo_labels()
+        self._refresh_anchor_list()
 
         self.slice_flag_list.setCurrentRow(0)
         self._refresh_export_views()
@@ -4224,8 +5019,14 @@ class DeepSliceMainWindow(QMainWindow):
             return
         x_values = self._linearity_payload["x"]
         nearest = int(np.argmin(np.abs(x_values - event.xdata)))
-        self.slice_flag_list.setCurrentRow(nearest)
-        self._on_curation_slice_selected(nearest)
+        target_row = self._list_row_for_prediction_index(nearest)
+        if target_row < 0:
+            target_row = nearest
+        self.slice_flag_list.setCurrentRow(target_row)
+        item = self.slice_flag_list.item(target_row)
+        if item is not None:
+            self.slice_flag_list.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+        self._on_curation_slice_selected(target_row)
 
     def _linearity_zoom(self, scale: float):
         if self._linearity_payload is None:
@@ -4277,6 +5078,7 @@ class DeepSliceMainWindow(QMainWindow):
             source_index = item.data(Qt.UserRole)
             if source_index is None:
                 source_index = idx
+            source_index = int(source_index)
             level = levels[source_index]
             
             if filter_index == 0:  # All Confidences
@@ -4292,45 +5094,80 @@ class DeepSliceMainWindow(QMainWindow):
         item = self.slice_flag_list.itemAt(pos)
         if item is None:
             return
-            
+
+        source_index = item.data(Qt.UserRole)
+        if source_index is None:
+            source_index = self.slice_flag_list.row(item)
+        source_index = int(source_index)
+
         menu = QMenu(self)
-        toggle_flag_action = menu.addAction("Toggle Bad Section Flag")
+        if item.checkState() == Qt.Checked:
+            toggle_flag_action = menu.addAction("Unflag as Bad")
+        else:
+            toggle_flag_action = menu.addAction("Flag as Bad")
         jump_viewer_action = menu.addAction("Jump to Viewer")
+        set_anchor_action = menu.addAction("Set Anchor Here")
+        remove_anchor_action = menu.addAction("Remove Anchor Here")
         edit_note_action = menu.addAction("Edit Atlas Note")
+        copy_path_action = menu.addAction("Copy File Path")
         show_details_action = menu.addAction("Show Confidence Details")
-        
+
         action = menu.exec(self.slice_flag_list.viewport().mapToGlobal(pos))
-        
+
         if action == toggle_flag_action:
             new_state = Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked
             item.setCheckState(new_state)
         elif action == jump_viewer_action:
             self.slice_flag_list.setCurrentItem(item)
+        elif action == set_anchor_action:
+            self.slice_flag_list.setCurrentItem(item)
+            self._set_anchor_for_current_slice()
+        elif action == remove_anchor_action:
+            self.slice_flag_list.setCurrentItem(item)
+            self._remove_anchor_for_current_slice()
         elif action == edit_note_action:
             self.slice_flag_list.setCurrentItem(item)
             if hasattr(self, "slice_note_edit"):
                 self.slice_note_edit.setFocus()
                 self.slice_note_edit.selectAll()
+        elif action == copy_path_action:
+            if self.state.predictions is not None and 0 <= source_index < len(self.state.predictions):
+                filename = str(self.state.predictions.iloc[source_index]["Filenames"])
+                image_path = self._resolve_image_path_for_filename(filename)
+                QApplication.clipboard().setText(image_path or filename)
+                self._show_toast("Slice path copied", timeout_ms=1800)
         elif action == show_details_action:
             QMessageBox.information(self, "Confidence Details", item.toolTip())
 
     def _on_curation_slice_selected(self, row_index: int):
         if self.state.predictions is None:
             return
-        if row_index < 0 or row_index >= len(self.state.predictions):
+        item = self.slice_flag_list.item(row_index) if hasattr(self, "slice_flag_list") else None
+        source_index = row_index
+        if item is not None:
+            source = item.data(Qt.UserRole)
+            if source is not None:
+                try:
+                    source_index = int(source)
+                except Exception:
+                    source_index = row_index
+
+        if source_index < 0 or source_index >= len(self.state.predictions):
             return
 
         if hasattr(self, "slice_note_edit"):
             note_text = ""
             if "atlas_note" in self.state.predictions.columns:
-                note_text = str(self.state.predictions.iloc[row_index].get("atlas_note", ""))
+                note_text = str(self.state.predictions.iloc[source_index].get("atlas_note", ""))
                 if note_text.lower() == "nan":
                     note_text = ""
             self.slice_note_edit.setText(note_text)
 
-        self._render_histology_preview(row_index)
-        self._render_confidence_overlay_preview(row_index)
-        self._request_atlas_preview(row_index)
+        self._sync_anchor_editor_with_selection(source_index)
+
+        self._render_histology_preview(source_index)
+        self._render_confidence_overlay_preview(source_index)
+        self._request_atlas_preview(source_index)
 
     def _apply_bad_section_flags(self):
         if self.state.predictions is None:
@@ -4559,6 +5396,8 @@ class DeepSliceMainWindow(QMainWindow):
     def _get_persisted_export_path(self) -> str:
         settings = QSettings("DeepSlice", "GUI")
         path = settings.value("export_directory", "")
+        if not path:
+            path = settings.value("default_output_directory", "")
         return path if path else os.getcwd()
 
     def _persist_export_path(self, path: str):
@@ -4623,10 +5462,10 @@ class DeepSliceMainWindow(QMainWindow):
 
     def _copy_export_path(self):
         if self.last_export_basepath is None:
-            QMessageBox.information(
-                self,
-                "Copy Path",
-                "Export predictions first to generate an output path.",
+            self._show_toast(
+                "Export predictions first to generate an output path",
+                timeout_ms=3200,
+                level="warning",
             )
             return
 
@@ -4725,6 +5564,13 @@ class DeepSliceMainWindow(QMainWindow):
             "include_images": self.pdf_include_images.isChecked(),
             "include_angles": self.pdf_include_angles.isChecked(),
         }
+        if self._linearity_payload is not None:
+            options["linearity_payload"] = {
+                "x": np.asarray(self._linearity_payload.get("x", []), dtype=float).tolist(),
+                "y": np.asarray(self._linearity_payload.get("y", []), dtype=float).tolist(),
+                "trend": np.asarray(self._linearity_payload.get("trend", []), dtype=float).tolist(),
+                "confidence": np.asarray(self._linearity_payload.get("confidence", []), dtype=float).tolist(),
+            }
 
         try:
             reporting.generate_pdf_report(
@@ -4741,7 +5587,7 @@ class DeepSliceMainWindow(QMainWindow):
             )
             return
 
-        QMessageBox.information(self, "Report", f"Report created:\n{report_path}")
+        self._show_toast(f"Report created: {report_path}", timeout_ms=4200, level="success")
 
     def _preview_report(self):
         if self.state.predictions is None:
@@ -4768,6 +5614,13 @@ class DeepSliceMainWindow(QMainWindow):
             "include_images": self.pdf_include_images.isChecked(),
             "include_angles": self.pdf_include_angles.isChecked(),
         }
+        if self._linearity_payload is not None:
+            options["linearity_payload"] = {
+                "x": np.asarray(self._linearity_payload.get("x", []), dtype=float).tolist(),
+                "y": np.asarray(self._linearity_payload.get("y", []), dtype=float).tolist(),
+                "trend": np.asarray(self._linearity_payload.get("trend", []), dtype=float).tolist(),
+                "confidence": np.asarray(self._linearity_payload.get("confidence", []), dtype=float).tolist(),
+            }
 
         self.status_bar.showMessage("Generating report preview...", 5000)
         QApplication.processEvents()
@@ -4795,19 +5648,19 @@ class DeepSliceMainWindow(QMainWindow):
 
     def _open_in_quicknii(self):
         if self.last_export_basepath is None:
-            QMessageBox.information(
-                self,
-                "QuickNII",
-                "Export predictions first to generate a file for QuickNII.",
+            self._show_toast(
+                "Export predictions first to open QuickNII",
+                timeout_ms=3200,
+                level="warning",
             )
             return
 
         target_file = self.last_export_basepath + ".json"
         if not os.path.exists(target_file):
-            QMessageBox.information(
-                self,
-                "QuickNII",
-                "QuickNII launch expects a JSON export. Export JSON first.",
+            self._show_toast(
+                "QuickNII launch expects a JSON export",
+                timeout_ms=3200,
+                level="warning",
             )
             return
 
@@ -4879,6 +5732,24 @@ class DeepSliceMainWindow(QMainWindow):
         else:
             self.markers_label.setText("")
 
+    def _load_anchor_targets_from_payload(self, payload: dict):
+        self._anchor_depth_targets = {}
+        anchors_payload = payload.get("anchor_depth_targets", {})
+        if not isinstance(anchors_payload, dict):
+            self._refresh_anchor_list()
+            return
+
+        for key, value in anchors_payload.items():
+            try:
+                row_index = int(key)
+                target_depth = float(value)
+            except Exception:
+                continue
+            if np.isfinite(target_depth):
+                self._anchor_depth_targets[row_index] = target_depth
+
+        self._refresh_anchor_list()
+
     def _save_session(self):
         filename, _ = QFileDialog.getSaveFileName(
             self,
@@ -4899,6 +5770,10 @@ class DeepSliceMainWindow(QMainWindow):
 
         try:
             payload = self.state.to_session_dict()
+            payload["anchor_depth_targets"] = {
+                str(index): float(depth)
+                for index, depth in self._anchor_depth_targets.items()
+            }
             with open(filename, "w", encoding="utf-8") as file_handle:
                 json.dump(payload, file_handle, indent=2)
         except Exception as exc:
@@ -4940,6 +5815,7 @@ class DeepSliceMainWindow(QMainWindow):
                 with open(filename, "r", encoding="utf-8") as file_handle:
                     payload = json.load(file_handle)
                 self.state.load_session_dict(payload)
+                self._load_anchor_targets_from_payload(payload)
                 self.state.is_dirty = False
                 self._apply_state_to_widgets()
                 self._baseline_predictions = self.state.predictions.copy() if self.state.predictions is not None else None
@@ -4966,6 +5842,7 @@ class DeepSliceMainWindow(QMainWindow):
                     payload = json.load(file_handle)
                 if payload.get("session_format") == "deepslice_gui_v1":
                     self.state.load_session_dict(payload)
+                    self._load_anchor_targets_from_payload(payload)
                     self.state.is_dirty = False
                     self._apply_state_to_widgets()
                     self._baseline_predictions = self.state.predictions.copy() if self.state.predictions is not None else None
@@ -4992,6 +5869,7 @@ class DeepSliceMainWindow(QMainWindow):
     def _on_load_quint_finished(self, result: dict, filename: str = None):
         self._set_session_io_busy(False)
         self.state.is_dirty = False
+        self._anchor_depth_targets = {}
         if self.state.species == "mouse":
             self.mouse_radio.setChecked(True)
         else:
@@ -5012,10 +5890,10 @@ class DeepSliceMainWindow(QMainWindow):
         self._update_session_status()
         if filename:
             self._add_recent_session(filename)
-        QMessageBox.information(
-            self,
-            "Loaded",
-            f"Loaded {result['slice_count']} slices as {result['species']}.{marker_note}",
+        self._show_toast(
+            f"Loaded {result['slice_count']} slices as {result['species']}{marker_note}",
+            timeout_ms=4200,
+            level="success",
         )
 
     def _on_load_quint_error(self, error_text: str):
@@ -5031,6 +5909,7 @@ class DeepSliceMainWindow(QMainWindow):
         self.mouse_radio.setChecked(self.state.species == "mouse")
         self.rat_radio.setChecked(self.state.species == "rat")
         self._refresh_atlas_volume_options()
+        self._update_anchor_depth_range()
         self.enable_section_numbers_checkbox.setChecked(self.state.section_numbers)
         self.legacy_parsing_checkbox.setChecked(self.state.legacy_section_numbers)
         self.legacy_from_config_checkbox.setChecked(self.state.legacy_section_numbers)
@@ -5042,6 +5921,7 @@ class DeepSliceMainWindow(QMainWindow):
             self.direction_override_combo.setCurrentText(self.state.selected_indexing_direction)
         else:
             self.direction_override_combo.setCurrentText("Auto")
+        self._refresh_anchor_list()
 
     def _show_hardware_health(self):
         try:
@@ -5143,6 +6023,11 @@ class DeepSliceMainWindow(QMainWindow):
             QWidget.setTabOrder(self.slice_flag_list, self.apply_bad_sections_button)
             QWidget.setTabOrder(self.apply_bad_sections_button, self.undo_button)
             QWidget.setTabOrder(self.undo_button, self.redo_button)
+            QWidget.setTabOrder(self.redo_button, self.anchor_depth_spin)
+            QWidget.setTabOrder(self.anchor_depth_spin, self.set_anchor_button)
+            QWidget.setTabOrder(self.set_anchor_button, self.remove_anchor_button)
+            QWidget.setTabOrder(self.remove_anchor_button, self.apply_anchor_interpolation_button)
+            QWidget.setTabOrder(self.apply_anchor_interpolation_button, self.anchor_list)
 
             QWidget.setTabOrder(self.output_dir_edit, self.output_basename_edit)
             QWidget.setTabOrder(self.output_basename_edit, self.output_format_combo)
@@ -5153,6 +6038,16 @@ class DeepSliceMainWindow(QMainWindow):
 
 
 def launch_gui():
+    try:
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    except Exception:
+        pass
+
+    try:
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    except Exception:
+        pass
+
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

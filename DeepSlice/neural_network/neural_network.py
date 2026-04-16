@@ -18,6 +18,14 @@ from ..diagnostics import monitored
 VALID_IMAGE_FORMATS = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
 
 
+class EnsemblePartialResultError(RuntimeError):
+    """Raised when ensemble secondary inference fails but primary predictions are available."""
+
+    def __init__(self, message: str, partial_predictions: pd.DataFrame):
+        super().__init__(message)
+        self.partial_predictions = partial_predictions
+
+
 class PredictionProgressCallback(tf.keras.callbacks.Callback):
     """Keras callback used to expose prediction progress to the GUI."""
 
@@ -224,6 +232,61 @@ def load_images_from_list(image_list: list, batch_size: int = 16) -> np.ndarray:
     return _create_image_generator(image_list, batch_size=batch_size)
 
 
+def _resolve_generator_metadata(image_generator: ImageDataGenerator):
+    source_paths = getattr(image_generator, "deepslice_paths", None)
+    if source_paths is None or len(source_paths) != len(image_generator.filenames):
+        source_paths = getattr(image_generator, "filepaths", None)
+    if source_paths is None or len(source_paths) != len(image_generator.filenames):
+        directory = getattr(image_generator, "directory", None)
+        if directory:
+            source_paths = [
+                os.path.join(directory, relative_path)
+                for relative_path in image_generator.filenames
+            ]
+        else:
+            source_paths = list(image_generator.filenames)
+    else:
+        source_paths = list(source_paths)
+
+    width = getattr(image_generator, "deepslice_width", None)
+    height = getattr(image_generator, "deepslice_height", None)
+    if (
+        width is None
+        or height is None
+        or len(width) != len(source_paths)
+        or len(height) != len(source_paths)
+    ):
+        sizes = [get_image_size(path) for path in source_paths]
+        width = [size[0] for size in sizes]
+        height = [size[1] for size in sizes]
+
+    return source_paths, width, height
+
+
+def _build_predictions_dataframe(
+    image_generator: ImageDataGenerator,
+    predictions: np.ndarray,
+) -> pd.DataFrame:
+    source_paths, width, height = _resolve_generator_metadata(image_generator)
+    filenames = [os.path.basename(path) for path in source_paths]
+    return pd.DataFrame(
+        {
+            "Filenames": filenames,
+            "width": width,
+            "height": height,
+            "ox": predictions[:, 0],
+            "oy": predictions[:, 1],
+            "oz": predictions[:, 2],
+            "ux": predictions[:, 3],
+            "uy": predictions[:, 4],
+            "uz": predictions[:, 5],
+            "vx": predictions[:, 6],
+            "vy": predictions[:, 7],
+            "vz": predictions[:, 8],
+        }
+    )
+
+
 def predictions_util(
     model: Sequential,
     image_generator: ImageDataGenerator,
@@ -310,64 +373,25 @@ def predictions_util(
                 callbacks=callbacks,
             )
         except Exception as exc:
-            raise RuntimeError(
-                "Secondary inference failed during ensemble pass. Check model weights and runtime memory."
+            partial_predictions = _build_predictions_dataframe(image_generator, predictions)
+            raise EnsemblePartialResultError(
+                "Secondary inference failed during ensemble pass. Primary predictions are available for recovery.",
+                partial_predictions,
             ) from exc
 
         secondary_predictions = secondary_predictions.astype(np.float64)
         if not np.isfinite(secondary_predictions).all():
-            raise RuntimeError(
-                "Secondary inference produced non-finite values (NaN/Inf)"
+            partial_predictions = _build_predictions_dataframe(image_generator, predictions)
+            raise EnsemblePartialResultError(
+                "Secondary inference produced non-finite values (NaN/Inf). Primary predictions are available for recovery.",
+                partial_predictions,
             )
         predictions = np.mean([predictions, secondary_predictions], axis=0)
 
     if not np.isfinite(predictions).all():
         raise RuntimeError("Inference produced non-finite coordinates (NaN/Inf)")
 
-    source_paths = getattr(image_generator, "deepslice_paths", None)
-    if source_paths is None or len(source_paths) != len(image_generator.filenames):
-        source_paths = getattr(image_generator, "filepaths", None)
-    if source_paths is None or len(source_paths) != len(image_generator.filenames):
-        directory = getattr(image_generator, "directory", None)
-        if directory:
-            source_paths = [
-                os.path.join(directory, relative_path)
-                for relative_path in image_generator.filenames
-            ]
-        else:
-            source_paths = list(image_generator.filenames)
-    else:
-        source_paths = list(source_paths)
-
-    width = getattr(image_generator, "deepslice_width", None)
-    height = getattr(image_generator, "deepslice_height", None)
-    if (
-        width is None
-        or height is None
-        or len(width) != len(source_paths)
-        or len(height) != len(source_paths)
-    ):
-        sizes = [get_image_size(path) for path in source_paths]
-        width = [size[0] for size in sizes]
-        height = [size[1] for size in sizes]
-
-    filenames = [os.path.basename(path) for path in source_paths]
-    predictions_df = pd.DataFrame(
-        {
-            "Filenames": filenames,
-            "width": width,
-            "height": height,
-            "ox": predictions[:, 0],
-            "oy": predictions[:, 1],
-            "oz": predictions[:, 2],
-            "ux": predictions[:, 3],
-            "uy": predictions[:, 4],
-            "uz": predictions[:, 5],
-            "vx": predictions[:, 6],
-            "vy": predictions[:, 7],
-            "vz": predictions[:, 8],
-        }
-    )
+    predictions_df = _build_predictions_dataframe(image_generator, predictions)
 
     return predictions_df
 

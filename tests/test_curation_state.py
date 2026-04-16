@@ -4,10 +4,50 @@ import sys
 import numpy as np
 import pandas as pd
 import pandas.testing as pdt
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from DeepSlice.gui.state import DeepSliceAppState
+
+
+class _MockModel:
+    def __init__(self, predictions: pd.DataFrame):
+        self.species = "mouse"
+        self.predictions = predictions.copy()
+        self.spacing_calls = []
+        self.bad_section_calls = []
+
+    def enforce_index_order(self):
+        self.predictions = self.predictions.sort_values("nr").reset_index(drop=True)
+
+    def enforce_index_spacing(self, section_thickness=None):
+        self.spacing_calls.append(section_thickness)
+        self.predictions = self.predictions.copy()
+        delta = float(section_thickness or 0.0)
+        self.predictions["oy"] = self.predictions["oy"].astype(float) + delta
+
+    def set_bad_sections(self, bad_sections, auto=False):
+        self.bad_section_calls.append((list(bad_sections), bool(auto)))
+        marked = set(str(name) for name in bad_sections)
+        self.predictions = self.predictions.copy()
+        self.predictions["bad_section"] = self.predictions["Filenames"].astype(str).isin(marked)
+
+
+class _FailingPredictModel:
+    species = "mouse"
+
+    def __init__(self, partial_predictions: pd.DataFrame):
+        self.predictions = None
+        self._partial_predictions = partial_predictions
+
+    def predict(self, **kwargs):
+        class _PartialFailure(Exception):
+            def __init__(self, partial_predictions):
+                super().__init__("secondary failed")
+                self.partial_predictions = partial_predictions
+
+        raise _PartialFailure(self._partial_predictions.copy())
 
 
 def _sample_predictions() -> pd.DataFrame:
@@ -76,3 +116,149 @@ def test_manual_reorder_and_undo_redo_roundtrip():
         reordered.reset_index(drop=True),
         check_dtype=False,
     )
+
+
+def test_set_bad_sections_supports_undo_and_records_auto_flag(monkeypatch):
+    state = DeepSliceAppState(species="mouse")
+    original = _sample_predictions()
+    state.predictions = original.copy()
+
+    model = _MockModel(state.predictions)
+    monkeypatch.setattr(state, "ensure_model", lambda log_callback=None: model)
+
+    selected = [original.iloc[1]["Filenames"], original.iloc[4]["Filenames"]]
+    state.set_bad_sections(selected, auto=True)
+
+    assert "bad_section" in state.predictions.columns
+    flagged = state.predictions.loc[state.predictions["bad_section"], "Filenames"].tolist()
+    assert sorted(flagged) == sorted(selected)
+    assert model.bad_section_calls[-1] == (selected, True)
+
+    state.undo()
+    pdt.assert_frame_equal(
+        state.predictions.reset_index(drop=True),
+        original.reset_index(drop=True),
+        check_dtype=False,
+    )
+
+
+def test_enforce_index_order_and_undo_roundtrip(monkeypatch):
+    state = DeepSliceAppState(species="mouse")
+    original = _sample_predictions().iloc[[3, 0, 5, 1, 4, 2]].reset_index(drop=True)
+    state.predictions = original.copy()
+
+    model = _MockModel(state.predictions)
+    monkeypatch.setattr(state, "ensure_model", lambda log_callback=None: model)
+
+    state.enforce_index_order()
+    assert state.predictions["nr"].astype(int).tolist() == sorted(original["nr"].astype(int).tolist())
+
+    state.undo()
+    pdt.assert_frame_equal(
+        state.predictions.reset_index(drop=True),
+        original.reset_index(drop=True),
+        check_dtype=False,
+    )
+
+
+def test_enforce_index_spacing_flips_sign_by_direction(monkeypatch):
+    state = DeepSliceAppState(species="mouse")
+    state.predictions = _sample_predictions()
+
+    model = _MockModel(state.predictions)
+    monkeypatch.setattr(state, "ensure_model", lambda log_callback=None: model)
+
+    state.selected_indexing_direction = "rostro-caudal"
+    state.enforce_index_spacing(section_thickness_um=120.0)
+    assert model.spacing_calls[-1] == -120.0
+
+    state.selected_indexing_direction = "caudal-rostro"
+    state.enforce_index_spacing(section_thickness_um=120.0)
+    assert model.spacing_calls[-1] == 120.0
+
+
+def test_undo_redo_edge_behavior():
+    state = DeepSliceAppState(species="mouse")
+    state.predictions = _sample_predictions()
+
+    with pytest.raises(ValueError, match="Nothing to undo"):
+        state.undo()
+
+    first_order = [5, 4, 3, 2, 1, 0]
+    second_order = [0, 2, 4, 1, 3, 5]
+
+    state.apply_manual_order(first_order)
+    state.undo()
+    state.redo()
+
+    state.undo()
+    state.apply_manual_order(second_order)
+    with pytest.raises(ValueError, match="Nothing to redo"):
+        state.redo()
+
+
+def test_linearity_payload_marks_bad_sections_low_confidence():
+    state = DeepSliceAppState(species="mouse")
+    predictions = _sample_predictions().copy()
+    predictions["bad_section"] = False
+    predictions.loc[[1, 4], "bad_section"] = True
+    state.predictions = predictions
+
+    payload = state.linearity_payload()
+    n = len(predictions)
+
+    assert payload["x"].shape[0] == n
+    assert payload["y"].shape[0] == n
+    assert payload["trend"].shape[0] == n
+    assert payload["residuals"].shape[0] == n
+    assert payload["outliers"].shape[0] == n
+    assert payload["weights"].shape[0] == n
+    assert payload["confidence"].shape[0] == n
+    assert payload["confidence_level"].shape[0] == n
+
+    bad_mask = predictions["bad_section"].astype(bool).values
+    assert np.all(payload["confidence"][bad_mask] == 0.0)
+
+    components = payload["confidence_components"]
+    for name in ["residual", "angle", "spacing", "center_weight"]:
+        assert components[name].shape[0] == n
+
+
+def test_partial_prediction_candidate_roundtrip_without_model():
+    state = DeepSliceAppState(species="mouse")
+    state.section_numbers = False
+    candidate = _sample_predictions().copy()
+    state._partial_prediction_candidate = candidate
+    state._partial_prediction_reason = "secondary failed"
+
+    result = state.use_partial_prediction_candidate()
+
+    assert result["partial_recovery"] is True
+    assert result["partial_reason"] == "secondary failed"
+    assert result["slice_count"] == len(candidate)
+    assert state.has_partial_prediction_candidate() is False
+    pdt.assert_frame_equal(
+        state.predictions.reset_index(drop=True),
+        candidate.reset_index(drop=True),
+        check_dtype=False,
+    )
+
+
+def test_run_prediction_caches_partial_candidate_on_failure(monkeypatch):
+    state = DeepSliceAppState(species="mouse")
+    state.image_paths = ["image_001.png"]
+    partial = _sample_predictions().copy()
+
+    failing_model = _FailingPredictModel(partial_predictions=partial)
+    monkeypatch.setattr(state, "ensure_model", lambda log_callback=None: failing_model)
+
+    with pytest.raises(RuntimeError, match="PARTIAL_PREDICTIONS_AVAILABLE"):
+        state.run_prediction(
+            section_numbers=True,
+            legacy_section_numbers=False,
+            ensemble=True,
+            use_secondary_model=False,
+        )
+
+    assert state.has_partial_prediction_candidate() is True
+    assert "secondary failed" in state.partial_prediction_reason().lower()

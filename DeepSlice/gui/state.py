@@ -37,6 +37,8 @@ class DeepSliceAppState:
     _config: Optional[dict] = None
     _metadata_path: Optional[str] = None
     _atlas_cache: Dict[str, np.ndarray] = field(default_factory=dict)
+    _partial_prediction_candidate: Optional[pd.DataFrame] = None
+    _partial_prediction_reason: Optional[str] = None
 
     def __post_init__(self):
         self._config, self._metadata_path = metadata_loader.load_config()
@@ -76,6 +78,7 @@ class DeepSliceAppState:
 
     def set_images(self, image_paths: List[str]):
         self.is_dirty = True
+        self.clear_partial_prediction_candidate()
         deduplicated = []
         seen = set()
         for path in image_paths:
@@ -95,11 +98,59 @@ class DeepSliceAppState:
     def clear_images(self):
         self.is_dirty = True
         self.image_paths = []
+        self.clear_partial_prediction_candidate()
 
     def remove_image(self, path: str):
         if path in self.image_paths:
             self.image_paths.remove(path)
             self.is_dirty = True
+
+    def has_partial_prediction_candidate(self) -> bool:
+        return self._partial_prediction_candidate is not None and len(self._partial_prediction_candidate) > 0
+
+    def partial_prediction_reason(self) -> str:
+        return str(self._partial_prediction_reason or "Secondary ensemble pass failed")
+
+    def clear_partial_prediction_candidate(self):
+        self._partial_prediction_candidate = None
+        self._partial_prediction_reason = None
+
+    def use_partial_prediction_candidate(self, log_callback=None) -> Dict[str, object]:
+        if not self.has_partial_prediction_candidate():
+            raise ValueError("No partial prediction candidate is available")
+
+        self.is_dirty = True
+        self.predictions = self._partial_prediction_candidate.copy()
+        self.undo_stack = []
+        self.redo_stack = []
+        self._sync_model_predictions()
+
+        reason = self.partial_prediction_reason()
+        self.clear_partial_prediction_candidate()
+
+        direction = self.detect_indexing_direction()
+        self.detected_indexing_direction = direction
+        self.selected_indexing_direction = direction
+
+        predicted_thickness_um = None
+        if self.section_numbers and len(self.predictions) >= 2:
+            try:
+                predicted_thickness_um = self.estimate_section_thickness_um()
+            except Exception:
+                predicted_thickness_um = None
+
+        if log_callback is not None:
+            log_callback(
+                "Recovered partial prediction result from primary ensemble pass after secondary failure"
+            )
+
+        return {
+            "slice_count": len(self.predictions),
+            "direction": direction,
+            "predicted_thickness_um": predicted_thickness_um,
+            "partial_recovery": True,
+            "partial_reason": reason,
+        }
 
     def image_format_report(self) -> Dict[str, List[str]]:
         supported, unsupported = [], []
@@ -338,6 +389,7 @@ class DeepSliceAppState:
         cancel_check=None,
     ) -> Dict[str, object]:
         self.is_dirty = True
+        self.clear_partial_prediction_candidate()
         if len(self.image_paths) == 0:
             raise ValueError("No images selected")
 
@@ -353,19 +405,31 @@ class DeepSliceAppState:
         )
         if progress_callback is not None:
             progress_callback(0, max(len(self.image_paths), 1), "prepare")
-        model.predict(
-            image_list=self.image_paths,
-            ensemble=ensemble,
-            section_numbers=section_numbers,
-            legacy_section_numbers=legacy_section_numbers,
-            use_secondary_model=use_secondary_model,
-            batch_size=inference_batch_size,
-            progress_callback=progress_callback,
-            log_callback=log_callback,
-            cancel_check=cancel_check,
-        )
+        try:
+            model.predict(
+                image_list=self.image_paths,
+                ensemble=ensemble,
+                section_numbers=section_numbers,
+                legacy_section_numbers=legacy_section_numbers,
+                use_secondary_model=use_secondary_model,
+                batch_size=inference_batch_size,
+                progress_callback=progress_callback,
+                log_callback=log_callback,
+                cancel_check=cancel_check,
+            )
+        except Exception as exc:
+            partial_predictions = getattr(exc, "partial_predictions", None)
+            if isinstance(partial_predictions, pd.DataFrame) and len(partial_predictions) > 0:
+                self._partial_prediction_candidate = partial_predictions.copy()
+                self._partial_prediction_reason = str(exc)
+                raise RuntimeError(
+                    "PARTIAL_PREDICTIONS_AVAILABLE: "
+                    + str(exc)
+                ) from exc
+            raise
 
         self.predictions = model.predictions.copy()
+        self.clear_partial_prediction_candidate()
         self.undo_stack = []
         self.redo_stack = []
 
@@ -398,6 +462,7 @@ class DeepSliceAppState:
 
     def load_quint(self, filename: str, log_callback=None) -> Dict[str, object]:
         self.is_dirty = False
+        self.clear_partial_prediction_candidate()
         model = self.ensure_model(log_callback=log_callback)
         model.load_QUINT(filename)
         self.species = model.species
@@ -753,6 +818,7 @@ class DeepSliceAppState:
 
     def load_session_dict(self, payload: Dict[str, object]):
         self.is_dirty = False
+        self.clear_partial_prediction_candidate()
         self.species = payload.get("species", "mouse")
         self.image_paths = payload.get("image_paths", [])
         self.section_numbers = bool(payload.get("section_numbers", True))
