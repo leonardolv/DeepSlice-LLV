@@ -88,6 +88,47 @@ class DSModel:
                 f"Predictions table is empty. Cannot run {action_name} on an empty dataset."
             )
 
+    @staticmethod
+    def _validate_prediction_coordinates(predictions):
+        coordinate_columns = ["ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz"]
+        missing = [column for column in coordinate_columns if column not in predictions.columns]
+        if len(missing) > 0:
+            raise RuntimeError(
+                "Prediction output is missing coordinate columns: " + ", ".join(missing)
+            )
+
+        matrix = predictions[coordinate_columns].to_numpy(dtype=float)
+        if matrix.ndim != 2 or matrix.shape[1] != 9:
+            raise RuntimeError(
+                f"Prediction coordinate matrix must have shape (N, 9), got {matrix.shape}"
+            )
+        if matrix.shape[0] == 0:
+            raise RuntimeError("Prediction output is empty")
+        if not np.isfinite(matrix).all():
+            raise RuntimeError("Prediction coordinate matrix contains NaN/Inf values")
+
+    def _append_vector_diagnostics(self, predictions, callback=None):
+        u = predictions[["ux", "uy", "uz"]].to_numpy(dtype=float)
+        v = predictions[["vx", "vy", "vz"]].to_numpy(dtype=float)
+        uv_dot = np.sum(u * v, axis=1)
+        uv_norm = np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            uv_cosine = np.where(uv_norm > 1e-9, uv_dot / uv_norm, np.nan)
+
+        orthogonality_flag = (~np.isfinite(uv_cosine)) | (np.abs(uv_cosine) > 0.10)
+        predictions["uv_dot"] = uv_dot
+        predictions["uv_cosine"] = uv_cosine
+        predictions["orthogonality_flag"] = orthogonality_flag.astype(bool)
+
+        flagged_count = int(np.sum(orthogonality_flag))
+        if flagged_count > 0:
+            self._log(
+                f"WARNING: {flagged_count} section(s) have non-orthogonal U/V vectors (|cos(U,V)| > 0.10)",
+                callback=callback,
+            )
+
+        return predictions
+
     def predict(
         self,
         image_directory: str = None,
@@ -203,6 +244,9 @@ class DSModel:
                 log_callback=log_callback,
                 cancel_check=cancel_check,
             )
+
+        self._validate_prediction_coordinates(predictions)
+
         if "width" not in predictions.columns:
             predictions["width"] = width
         if "height" not in predictions.columns:
@@ -217,7 +261,9 @@ class DSModel:
             ###this is just for coronal, change later
             predictions = predictions.sort_values(by="oy").reset_index(drop=True)
 
-        #: pd.DataFrame: Filenames and predicted QuickNII coordinates of the input sections.
+        predictions = self._append_vector_diagnostics(predictions, callback=log_callback)
+
+        # Filenames and predicted QuickNII coordinates of the input sections.
 
         self.predictions = predictions
         self.image_directory = image_directory

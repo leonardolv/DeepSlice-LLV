@@ -75,6 +75,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QDoubleSpinBox,
+    QSpinBox,
 )
 from PIL import Image
 
@@ -839,8 +840,6 @@ class DeepSliceMainWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.global_progress)
         self.toast_overlay = ToastOverlay(self)
 
-        self.toast_overlay = ToastOverlay(self)
-
     def _set_global_busy(self, busy: bool):
         self.top_task_progress.setVisible(bool(busy))
         self.global_progress.setVisible(bool(busy))
@@ -960,6 +959,10 @@ class DeepSliceMainWindow(QMainWindow):
             "ensemble_help_button": "Detailed explanation of ensemble accuracy vs speed tradeoff.",
             "secondary_model_checkbox": "Run only secondary model weights for comparison/testing workflows.",
             "legacy_from_config_checkbox": "Use legacy filename parser from configuration page for compatibility with older datasets.",
+            "outlier_sigma_spin": "Sensitivity multiplier for residual outlier detection (1.0 = strict, 3.0 = lenient).",
+            "confidence_high_spin": "Confidence score threshold for the High confidence bucket.",
+            "confidence_medium_spin": "Confidence score threshold for the Medium confidence bucket.",
+            "inference_batch_spin": "Inference batch size per model pass. Higher values are faster but use more memory.",
             "validate_configuration_button": "Run preflight checks and list blocking errors/warnings before prediction starts.",
             "tech_toggle": "Expand/collapse technical notes describing coordinate vectors, angle propagation, and thickness estimation.",
 
@@ -1074,6 +1077,7 @@ class DeepSliceMainWindow(QMainWindow):
             QLineEdit,
             QComboBox,
             QDoubleSpinBox,
+            QSpinBox,
             QSlider,
             QListWidget,
             QTableWidget,
@@ -1271,6 +1275,25 @@ class DeepSliceMainWindow(QMainWindow):
                 self.state.set_species(preferred_species)
             except Exception:
                 pass
+
+        try:
+            batch_size = int(settings.value("inference_batch_size", self.state.inference_batch_size))
+            if batch_size > 0:
+                self.state.inference_batch_size = batch_size
+        except Exception:
+            pass
+
+        outlier_sigma = settings.value("outlier_sigma", self.state.outlier_sigma_threshold)
+        confidence_medium = settings.value("confidence_medium_threshold", self.state.confidence_medium_threshold)
+        confidence_high = settings.value("confidence_high_threshold", self.state.confidence_high_threshold)
+        try:
+            self.state.set_quality_controls(
+                outlier_sigma=float(outlier_sigma),
+                confidence_medium=float(confidence_medium),
+                confidence_high=float(confidence_high),
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _coerce_int_list(value) -> Optional[List[int]]:
@@ -1608,7 +1631,7 @@ class DeepSliceMainWindow(QMainWindow):
         text = self._session_base_text
         is_dirty = getattr(self.state, "is_dirty", False)
         if is_dirty:
-            text = f"*{text}"
+            text = f"● {text}"
         self.session_status_label.setText(text)
         self.setWindowTitle(f"{self._window_title_base}{' *' if is_dirty else ''}")
 
@@ -2113,6 +2136,10 @@ class DeepSliceMainWindow(QMainWindow):
         elif self.secondary_model_checkbox.isChecked():
             per_slice *= 1.1
 
+        batch_size = int(getattr(self, "inference_batch_spin", None).value() if hasattr(self, "inference_batch_spin") else 8)
+        batch_scale = 8.0 / float(max(batch_size, 1))
+        per_slice *= np.clip(batch_scale, 0.35, 2.0)
+
         return int(max(1, round(count * per_slice)))
 
     def _update_processing_estimate(self):
@@ -2283,6 +2310,42 @@ class DeepSliceMainWindow(QMainWindow):
         prediction_layout.addWidget(self.secondary_model_checkbox)
         prediction_layout.addWidget(self.legacy_from_config_checkbox)
         left_layout.addWidget(prediction_group)
+
+        quality_group = QGroupBox("Quality and Runtime")
+        quality_layout = QFormLayout(quality_group)
+
+        self.outlier_sigma_spin = QDoubleSpinBox()
+        self.outlier_sigma_spin.setRange(1.0, 3.0)
+        self.outlier_sigma_spin.setDecimals(2)
+        self.outlier_sigma_spin.setSingleStep(0.1)
+        self.outlier_sigma_spin.setValue(float(self.state.outlier_sigma_threshold))
+        self.outlier_sigma_spin.setSuffix(" sigma")
+        self.outlier_sigma_spin.valueChanged.connect(self._on_quality_controls_changed)
+
+        self.confidence_high_spin = QDoubleSpinBox()
+        self.confidence_high_spin.setRange(0.55, 0.99)
+        self.confidence_high_spin.setDecimals(2)
+        self.confidence_high_spin.setSingleStep(0.01)
+        self.confidence_high_spin.setValue(float(self.state.confidence_high_threshold))
+        self.confidence_high_spin.valueChanged.connect(self._on_quality_controls_changed)
+
+        self.confidence_medium_spin = QDoubleSpinBox()
+        self.confidence_medium_spin.setRange(0.20, 0.90)
+        self.confidence_medium_spin.setDecimals(2)
+        self.confidence_medium_spin.setSingleStep(0.01)
+        self.confidence_medium_spin.setValue(float(self.state.confidence_medium_threshold))
+        self.confidence_medium_spin.valueChanged.connect(self._on_quality_controls_changed)
+
+        self.inference_batch_spin = QSpinBox()
+        self.inference_batch_spin.setRange(1, 64)
+        self.inference_batch_spin.setValue(int(self.state.inference_batch_size))
+        self.inference_batch_spin.valueChanged.connect(self._on_inference_batch_changed)
+
+        quality_layout.addRow("Outlier sensitivity", self.outlier_sigma_spin)
+        quality_layout.addRow("High confidence >=", self.confidence_high_spin)
+        quality_layout.addRow("Medium confidence >=", self.confidence_medium_spin)
+        quality_layout.addRow("Inference batch size", self.inference_batch_spin)
+        left_layout.addWidget(quality_group)
 
         self.slice_count_reminder_label = QLabel("Will process 0 slices")
         self.processing_estimate_label = QLabel("Estimated processing time: -")
@@ -3569,6 +3632,34 @@ class DeepSliceMainWindow(QMainWindow):
             self.state.selected_indexing_direction = value
         self._update_processing_estimate()
 
+    def _on_quality_controls_changed(self, *_args):
+        try:
+            self.state.set_quality_controls(
+                outlier_sigma=float(self.outlier_sigma_spin.value()),
+                confidence_medium=float(self.confidence_medium_spin.value()),
+                confidence_high=float(self.confidence_high_spin.value()),
+            )
+        except ValueError as exc:
+            self.config_validation_label.setText(f"Validation: {exc}")
+            return
+
+        settings = QSettings("DeepSlice", "GUI")
+        settings.setValue("outlier_sigma", float(self.state.outlier_sigma_threshold))
+        settings.setValue("confidence_medium_threshold", float(self.state.confidence_medium_threshold))
+        settings.setValue("confidence_high_threshold", float(self.state.confidence_high_threshold))
+
+        self._update_run_button_state()
+        if self.state.predictions is not None:
+            self._refresh_curation_views()
+            self._refresh_export_views()
+
+    def _on_inference_batch_changed(self, value: int):
+        batch_size = int(max(1, value))
+        self.state.inference_batch_size = batch_size
+        settings = QSettings("DeepSlice", "GUI")
+        settings.setValue("inference_batch_size", batch_size)
+        self._update_processing_estimate()
+
     def _validate_before_prediction(self) -> (List[str], List[str]):
         errors: List[str] = []
         warnings: List[str] = []
@@ -3584,6 +3675,9 @@ class DeepSliceMainWindow(QMainWindow):
 
         if self.orientation_combo.currentIndex() != 0:
             errors.append("Only coronal orientation is currently supported")
+
+        if self.confidence_high_spin.value() <= self.confidence_medium_spin.value():
+            errors.append("High confidence threshold must be greater than medium threshold")
 
         if self.enable_section_numbers_checkbox.isChecked():
             index_report = self.state.build_index_report(
@@ -3655,6 +3749,7 @@ class DeepSliceMainWindow(QMainWindow):
             "legacy_section_numbers": self.state.legacy_section_numbers,
             "ensemble": self.state.ensemble,
             "use_secondary_model": self.state.use_secondary_model,
+            "inference_batch_size": int(self.inference_batch_spin.value()),
         }
 
         self._current_prediction_worker = FunctionWorker(
@@ -3693,6 +3788,7 @@ class DeepSliceMainWindow(QMainWindow):
             legacy_section_numbers=options["legacy_section_numbers"],
             ensemble=options["ensemble"],
             use_secondary_model=options["use_secondary_model"],
+            inference_batch_size=options["inference_batch_size"],
             progress_callback=guarded_progress,
             log_callback=log_callback,
             cancel_check=is_cancelled,
@@ -3876,25 +3972,44 @@ class DeepSliceMainWindow(QMainWindow):
         self._update_run_button_state()
 
         mean_conf = "-"
+        outlier_count = 0
         if self._linearity_payload is not None and "confidence" in self._linearity_payload:
             mean_conf = f"{float(np.mean(self._linearity_payload['confidence'])):.2f}"
+        if self._linearity_payload is not None and "outliers" in self._linearity_payload:
+            outlier_count = int(np.sum(np.asarray(self._linearity_payload["outliers"], dtype=bool)))
+
+        diagnostics: List[str] = []
+        out_of_bounds_count = int(result.get("out_of_bounds_count", 0) or 0)
+        angle_outlier_count = int(result.get("angle_outlier_count", 0) or 0)
+        orthogonality_count = int(result.get("orthogonality_count", 0) or 0)
+        if out_of_bounds_count > 0:
+            diagnostics.append(f"{out_of_bounds_count} AP depth(s) outside atlas range")
+        if angle_outlier_count > 0:
+            diagnostics.append(f"{angle_outlier_count} section(s) with abrupt angle deviations")
+        if orthogonality_count > 0:
+            diagnostics.append(f"{orthogonality_count} section(s) with non-orthogonal U/V vectors")
 
         if recovered_partial:
             reason = str(result.get("partial_reason", "secondary ensemble pass failed")).strip()
             summary_text = (
                 f"Recovered partial result in {self._format_duration(elapsed_seconds)} - "
-                f"{int(result['slice_count'])} slices - Mean confidence: {mean_conf}"
+                f"{int(result['slice_count'])} slices - Mean confidence: {mean_conf} - Outliers: {outlier_count}"
             )
             self._show_toast(summary_text, timeout_ms=7000, level="warning")
             self._append_console_log("[WARNING] " + reason)
+            for detail in diagnostics:
+                self._append_console_log("[WARNING] " + detail)
             self._append_console_log("[SYSTEM] " + summary_text)
             return
 
         summary_text = (
             f"Completed in {self._format_duration(elapsed_seconds)} - "
-            f"{int(result['slice_count'])} slices processed - Mean confidence: {mean_conf}"
+            f"{int(result['slice_count'])} slices processed - Mean confidence: {mean_conf} - Outliers: {outlier_count}"
         )
-        self._show_toast(summary_text, timeout_ms=6000, level="success")
+        toast_level = "warning" if len(diagnostics) > 0 else "success"
+        self._show_toast(summary_text, timeout_ms=6000, level=toast_level)
+        for detail in diagnostics:
+            self._append_console_log("[WARNING] " + detail)
         self._append_console_log("[SYSTEM] " + summary_text)
 
     def _on_prediction_error(self, error_text: str):
@@ -5921,6 +6036,23 @@ class DeepSliceMainWindow(QMainWindow):
             self.direction_override_combo.setCurrentText(self.state.selected_indexing_direction)
         else:
             self.direction_override_combo.setCurrentText("Auto")
+
+        if hasattr(self, "outlier_sigma_spin"):
+            self.outlier_sigma_spin.blockSignals(True)
+            self.outlier_sigma_spin.setValue(float(self.state.outlier_sigma_threshold))
+            self.outlier_sigma_spin.blockSignals(False)
+        if hasattr(self, "confidence_medium_spin"):
+            self.confidence_medium_spin.blockSignals(True)
+            self.confidence_medium_spin.setValue(float(self.state.confidence_medium_threshold))
+            self.confidence_medium_spin.blockSignals(False)
+        if hasattr(self, "confidence_high_spin"):
+            self.confidence_high_spin.blockSignals(True)
+            self.confidence_high_spin.setValue(float(self.state.confidence_high_threshold))
+            self.confidence_high_spin.blockSignals(False)
+        if hasattr(self, "inference_batch_spin"):
+            self.inference_batch_spin.blockSignals(True)
+            self.inference_batch_spin.setValue(int(self.state.inference_batch_size))
+            self.inference_batch_spin.blockSignals(False)
         self._refresh_anchor_list()
 
     def _show_hardware_health(self):
@@ -6014,7 +6146,11 @@ class DeepSliceMainWindow(QMainWindow):
             QWidget.setTabOrder(self.rat_radio, self.auto_thickness_checkbox)
             QWidget.setTabOrder(self.auto_thickness_checkbox, self.thickness_spin)
             QWidget.setTabOrder(self.thickness_spin, self.direction_override_combo)
-            QWidget.setTabOrder(self.direction_override_combo, self.validate_configuration_button)
+            QWidget.setTabOrder(self.direction_override_combo, self.outlier_sigma_spin)
+            QWidget.setTabOrder(self.outlier_sigma_spin, self.confidence_medium_spin)
+            QWidget.setTabOrder(self.confidence_medium_spin, self.confidence_high_spin)
+            QWidget.setTabOrder(self.confidence_high_spin, self.inference_batch_spin)
+            QWidget.setTabOrder(self.inference_batch_spin, self.validate_configuration_button)
 
             QWidget.setTabOrder(self.run_alignment_button, self.cancel_alignment_button)
             QWidget.setTabOrder(self.cancel_alignment_button, self.console_toggle)

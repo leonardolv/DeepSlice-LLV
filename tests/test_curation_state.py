@@ -237,8 +237,9 @@ def test_partial_prediction_candidate_roundtrip_without_model():
     assert result["partial_reason"] == "secondary failed"
     assert result["slice_count"] == len(candidate)
     assert state.has_partial_prediction_candidate() is False
+    preserved_columns = candidate.columns.tolist()
     pdt.assert_frame_equal(
-        state.predictions.reset_index(drop=True),
+        state.predictions[preserved_columns].reset_index(drop=True),
         candidate.reset_index(drop=True),
         check_dtype=False,
     )
@@ -262,3 +263,49 @@ def test_run_prediction_caches_partial_candidate_on_failure(monkeypatch):
 
     assert state.has_partial_prediction_candidate() is True
     assert "secondary failed" in state.partial_prediction_reason().lower()
+
+
+def test_set_quality_controls_validates_ranges():
+    state = DeepSliceAppState(species="mouse")
+
+    with pytest.raises(ValueError, match="Outlier sensitivity"):
+        state.set_quality_controls(outlier_sigma=0.5, confidence_medium=0.5, confidence_high=0.8)
+
+    with pytest.raises(ValueError, match="High confidence threshold"):
+        state.set_quality_controls(outlier_sigma=1.5, confidence_medium=0.7, confidence_high=0.6)
+
+    state.set_quality_controls(outlier_sigma=2.2, confidence_medium=0.45, confidence_high=0.82)
+    assert state.outlier_sigma_threshold == pytest.approx(2.2)
+    assert state.confidence_medium_threshold == pytest.approx(0.45)
+    assert state.confidence_high_threshold == pytest.approx(0.82)
+
+
+def test_linearity_payload_respects_adjusted_confidence_thresholds():
+    state = DeepSliceAppState(species="mouse")
+    state.predictions = _sample_predictions()
+
+    baseline = state.linearity_payload()
+    baseline_high = int(np.sum(baseline["confidence_level"] == "high"))
+
+    state.set_quality_controls(outlier_sigma=1.5, confidence_medium=0.70, confidence_high=0.92)
+    adjusted = state.linearity_payload()
+    adjusted_high = int(np.sum(adjusted["confidence_level"] == "high"))
+
+    assert adjusted_high <= baseline_high
+
+
+def test_partial_prediction_candidate_adds_diagnostic_columns():
+    state = DeepSliceAppState(species="mouse")
+    state.section_numbers = False
+    candidate = _sample_predictions().copy()
+    state._partial_prediction_candidate = candidate
+    state._partial_prediction_reason = "secondary failed"
+
+    result = state.use_partial_prediction_candidate()
+
+    assert "out_of_bounds_count" in result
+    assert "orthogonality_count" in result
+    assert "angle_outlier_count" in result
+    assert "ap_out_of_bounds" in state.predictions.columns
+    assert "orthogonality_flag" in state.predictions.columns
+    assert "angle_outlier" in state.predictions.columns

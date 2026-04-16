@@ -266,10 +266,12 @@ def _resolve_generator_metadata(image_generator: ImageDataGenerator):
 def _build_predictions_dataframe(
     image_generator: ImageDataGenerator,
     predictions: np.ndarray,
+    ensemble_delta_mean_abs: np.ndarray = None,
+    ensemble_delta_max_abs: np.ndarray = None,
 ) -> pd.DataFrame:
     source_paths, width, height = _resolve_generator_metadata(image_generator)
     filenames = [os.path.basename(path) for path in source_paths]
-    return pd.DataFrame(
+    dataframe = pd.DataFrame(
         {
             "Filenames": filenames,
             "width": width,
@@ -285,6 +287,26 @@ def _build_predictions_dataframe(
             "vz": predictions[:, 8],
         }
     )
+
+    if ensemble_delta_mean_abs is not None:
+        dataframe["ensemble_delta_mean_abs"] = np.asarray(ensemble_delta_mean_abs, dtype=float)
+    if ensemble_delta_max_abs is not None:
+        dataframe["ensemble_delta_max_abs"] = np.asarray(ensemble_delta_max_abs, dtype=float)
+
+    return dataframe
+
+
+def _validate_prediction_matrix(predictions: np.ndarray, phase: str):
+    matrix = np.asarray(predictions, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[1] != 9:
+        raise RuntimeError(
+            f"{phase} inference produced invalid coordinate shape {matrix.shape}; expected (N, 9)"
+        )
+    if matrix.shape[0] == 0:
+        raise RuntimeError(f"{phase} inference produced no predictions")
+    if not np.isfinite(matrix).all():
+        raise RuntimeError(f"{phase} inference produced non-finite values (NaN/Inf)")
+    return matrix
 
 
 def predictions_util(
@@ -338,9 +360,10 @@ def predictions_util(
             "Primary inference failed. Check image integrity, TensorFlow runtime, and available memory."
         ) from exc
 
-    predictions = predictions.astype(np.float64)
-    if not np.isfinite(predictions).all():
-        raise RuntimeError("Primary inference produced non-finite values (NaN/Inf)")
+    predictions = _validate_prediction_matrix(predictions, phase="Primary")
+
+    ensemble_delta_mean_abs = None
+    ensemble_delta_max_abs = None
 
     if ensemble:
         if secondary_weights is None:
@@ -379,19 +402,28 @@ def predictions_util(
                 partial_predictions,
             ) from exc
 
-        secondary_predictions = secondary_predictions.astype(np.float64)
-        if not np.isfinite(secondary_predictions).all():
+        try:
+            secondary_predictions = _validate_prediction_matrix(secondary_predictions, phase="Secondary")
+        except Exception as exc:
             partial_predictions = _build_predictions_dataframe(image_generator, predictions)
             raise EnsemblePartialResultError(
-                "Secondary inference produced non-finite values (NaN/Inf). Primary predictions are available for recovery.",
+                "Secondary inference produced invalid outputs. Primary predictions are available for recovery.",
                 partial_predictions,
-            )
+            ) from exc
+
+        ensemble_abs_delta = np.abs(predictions - secondary_predictions)
+        ensemble_delta_mean_abs = np.mean(ensemble_abs_delta, axis=1)
+        ensemble_delta_max_abs = np.max(ensemble_abs_delta, axis=1)
         predictions = np.mean([predictions, secondary_predictions], axis=0)
 
-    if not np.isfinite(predictions).all():
-        raise RuntimeError("Inference produced non-finite coordinates (NaN/Inf)")
+    predictions = _validate_prediction_matrix(predictions, phase="Final")
 
-    predictions_df = _build_predictions_dataframe(image_generator, predictions)
+    predictions_df = _build_predictions_dataframe(
+        image_generator,
+        predictions,
+        ensemble_delta_mean_abs=ensemble_delta_mean_abs,
+        ensemble_delta_max_abs=ensemble_delta_max_abs,
+    )
 
     return predictions_df
 

@@ -30,6 +30,10 @@ class DeepSliceAppState:
     legacy_section_numbers: bool = False
     ensemble: Optional[bool] = None
     use_secondary_model: bool = False
+    outlier_sigma_threshold: float = 1.5
+    confidence_high_threshold: float = 0.75
+    confidence_medium_threshold: float = 0.50
+    inference_batch_size: int = 8
     detected_indexing_direction: Optional[str] = None
     selected_indexing_direction: Optional[str] = None
     undo_stack: List[pd.DataFrame] = field(default_factory=list)
@@ -51,6 +55,32 @@ class DeepSliceAppState:
             self.species = species
             self.model = None
             self._atlas_cache = {}
+
+    def set_quality_controls(
+        self,
+        outlier_sigma: float,
+        confidence_medium: float,
+        confidence_high: float,
+    ):
+        outlier_sigma = float(outlier_sigma)
+        confidence_medium = float(confidence_medium)
+        confidence_high = float(confidence_high)
+
+        if not np.isfinite(outlier_sigma):
+            raise ValueError("Outlier sensitivity must be a finite number")
+        if not 1.0 <= outlier_sigma <= 3.0:
+            raise ValueError("Outlier sensitivity must be between 1.0 and 3.0 sigma")
+
+        if not np.isfinite(confidence_medium) or not np.isfinite(confidence_high):
+            raise ValueError("Confidence thresholds must be finite numbers")
+        if not 0.05 <= confidence_medium <= 0.95:
+            raise ValueError("Medium confidence threshold must be between 0.05 and 0.95")
+        if not confidence_medium < confidence_high < 1.0:
+            raise ValueError("High confidence threshold must be greater than medium and below 1.0")
+
+        self.outlier_sigma_threshold = outlier_sigma
+        self.confidence_medium_threshold = confidence_medium
+        self.confidence_high_threshold = confidence_high
 
     def ensure_model(self, log_callback=None) -> "DSModel":
         from ..main import DSModel
@@ -139,6 +169,8 @@ class DeepSliceAppState:
             except Exception:
                 predicted_thickness_um = None
 
+        diagnostics = self._annotate_prediction_diagnostics()
+
         if log_callback is not None:
             log_callback(
                 "Recovered partial prediction result from primary ensemble pass after secondary failure"
@@ -150,6 +182,7 @@ class DeepSliceAppState:
             "predicted_thickness_um": predicted_thickness_um,
             "partial_recovery": True,
             "partial_reason": reason,
+            **diagnostics,
         }
 
     def image_format_report(self) -> Dict[str, List[str]]:
@@ -342,9 +375,22 @@ class DeepSliceAppState:
         if self.model is not None and self.predictions is not None:
             self.model.predictions = self.predictions.copy()
 
-    def _recommended_inference_batch_size(self, progress_callback=None, log_callback=None) -> int:
+    def _recommended_inference_batch_size(
+        self,
+        progress_callback=None,
+        log_callback=None,
+        requested_batch_size: Optional[int] = None,
+    ) -> int:
+        if requested_batch_size is not None:
+            requested = int(requested_batch_size)
+            if requested <= 0:
+                raise ValueError("inference_batch_size must be a positive integer")
+            if log_callback is not None:
+                log_callback(f"Using user-configured inference batch size {requested}")
+            return requested
+
         if progress_callback is None:
-            return 16
+            return int(max(1, self.inference_batch_size))
 
         batch_size = 2
         try:
@@ -359,6 +405,82 @@ class DeepSliceAppState:
         if log_callback is not None:
             log_callback(f"Using inference batch size {batch_size} for current runtime")
         return batch_size
+
+    def _annotate_prediction_diagnostics(self) -> Dict[str, object]:
+        diagnostics = {
+            "out_of_bounds_count": 0,
+            "angle_outlier_count": 0,
+            "orthogonality_count": 0,
+        }
+        if self.predictions is None or len(self.predictions) == 0:
+            return diagnostics
+
+        try:
+            depths = np.asarray(
+                calculate_brain_center_depths(self.predictions, species=self.species),
+                dtype=float,
+            )
+            min_depth, max_depth = metadata_loader.get_species_depth_range(self.species)
+            out_of_bounds = (depths < float(min_depth)) | (depths > float(max_depth))
+            self.predictions["ap_depth"] = depths
+            self.predictions["ap_out_of_bounds"] = out_of_bounds.astype(bool)
+            diagnostics["out_of_bounds_count"] = int(np.sum(out_of_bounds))
+        except Exception:
+            self.predictions["ap_out_of_bounds"] = False
+
+        try:
+            u = self.predictions[["ux", "uy", "uz"]].to_numpy(dtype=float)
+            v = self.predictions[["vx", "vy", "vz"]].to_numpy(dtype=float)
+            uv_dot = np.sum(u * v, axis=1)
+            uv_norm = np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                uv_cosine = np.where(uv_norm > 1e-9, uv_dot / uv_norm, np.nan)
+            orthogonality_flags = (~np.isfinite(uv_cosine)) | (np.abs(uv_cosine) > 0.10)
+
+            self.predictions["uv_dot"] = uv_dot
+            self.predictions["uv_cosine"] = uv_cosine
+            self.predictions["orthogonality_flag"] = orthogonality_flags.astype(bool)
+            diagnostics["orthogonality_count"] = int(np.sum(orthogonality_flags))
+        except Exception:
+            self.predictions["orthogonality_flag"] = False
+
+        try:
+            dv_angles, ml_angles = angle_methods.calculate_angles(self.predictions)
+            dv_angles = np.asarray(dv_angles, dtype=float)
+            ml_angles = np.asarray(ml_angles, dtype=float)
+            n = len(dv_angles)
+            neighbor_deviation = np.zeros(n, dtype=float)
+            if n >= 3:
+                for idx in range(n):
+                    dv_neighbors = []
+                    ml_neighbors = []
+                    if idx > 0:
+                        dv_neighbors.append(float(dv_angles[idx - 1]))
+                        ml_neighbors.append(float(ml_angles[idx - 1]))
+                    if idx + 1 < n:
+                        dv_neighbors.append(float(dv_angles[idx + 1]))
+                        ml_neighbors.append(float(ml_angles[idx + 1]))
+                    if len(dv_neighbors) == 0:
+                        continue
+                    mean_dv = float(np.mean(dv_neighbors))
+                    mean_ml = float(np.mean(ml_neighbors))
+                    neighbor_deviation[idx] = float(
+                        np.sqrt((dv_angles[idx] - mean_dv) ** 2 + (ml_angles[idx] - mean_ml) ** 2)
+                    )
+
+            deviation_std = float(np.std(neighbor_deviation))
+            if deviation_std > 1e-9:
+                angle_outliers = neighbor_deviation > (3.0 * deviation_std)
+            else:
+                angle_outliers = np.array([False] * n)
+
+            self.predictions["angle_neighbor_deviation"] = neighbor_deviation
+            self.predictions["angle_outlier"] = angle_outliers.astype(bool)
+            diagnostics["angle_outlier_count"] = int(np.sum(angle_outliers))
+        except Exception:
+            self.predictions["angle_outlier"] = False
+
+        return diagnostics
 
     def undo(self):
         self.is_dirty = True
@@ -384,6 +506,7 @@ class DeepSliceAppState:
         legacy_section_numbers: bool,
         ensemble: Optional[bool],
         use_secondary_model: bool,
+        inference_batch_size: Optional[int] = None,
         progress_callback=None,
         log_callback=None,
         cancel_check=None,
@@ -397,11 +520,14 @@ class DeepSliceAppState:
         self.legacy_section_numbers = legacy_section_numbers
         self.ensemble = ensemble
         self.use_secondary_model = use_secondary_model
+        if inference_batch_size is not None:
+            self.inference_batch_size = int(max(1, inference_batch_size))
 
         model = self.ensure_model(log_callback=log_callback)
         inference_batch_size = self._recommended_inference_batch_size(
             progress_callback=progress_callback,
             log_callback=log_callback,
+            requested_batch_size=self.inference_batch_size,
         )
         if progress_callback is not None:
             progress_callback(0, max(len(self.image_paths), 1), "prepare")
@@ -432,6 +558,7 @@ class DeepSliceAppState:
         self.clear_partial_prediction_candidate()
         self.undo_stack = []
         self.redo_stack = []
+        diagnostics = self._annotate_prediction_diagnostics()
 
         progress_total = max(len(self.predictions), 1)
         if progress_callback is not None:
@@ -458,6 +585,7 @@ class DeepSliceAppState:
             "slice_count": len(self.predictions),
             "direction": direction,
             "predicted_thickness_um": predicted_thickness_um,
+            **diagnostics,
         }
 
     def load_quint(self, filename: str, log_callback=None) -> Dict[str, object]:
@@ -469,6 +597,7 @@ class DeepSliceAppState:
         self.predictions = model.predictions.copy()
         self.undo_stack = []
         self.redo_stack = []
+        self._annotate_prediction_diagnostics()
 
         self.detected_indexing_direction = self.detect_indexing_direction()
         self.selected_indexing_direction = self.detected_indexing_direction
@@ -722,23 +851,29 @@ class DeepSliceAppState:
         )
         confidence = np.clip(confidence, 0.0, 1.0)
 
+        outlier_sigma = float(np.clip(self.outlier_sigma_threshold, 1.0, 3.0))
+        medium_threshold = float(np.clip(self.confidence_medium_threshold, 0.05, 0.95))
+        high_threshold = float(
+            np.clip(self.confidence_high_threshold, max(medium_threshold + 0.01, 0.06), 0.99)
+        )
+
         bad_sections = np.array([False] * len(predictions))
         if "bad_section" in predictions.columns:
             bad_sections = predictions["bad_section"].astype(bool).values
 
         confidence[bad_sections] = 0.0
         confidence_level = np.where(
-            confidence >= 0.75,
+            confidence >= high_threshold,
             "high",
-            np.where(confidence >= 0.50, "medium", "low"),
+            np.where(confidence >= medium_threshold, "medium", "low"),
         )
 
         residual_std = float(np.std(residuals))
         if residual_std == 0:
             residual_outliers = np.array([False] * len(residuals))
         else:
-            residual_outliers = np.abs(residuals) > 1.5 * residual_std
-        outliers = (confidence < 0.35) | residual_outliers | bad_sections
+            residual_outliers = np.abs(residuals) > (outlier_sigma * residual_std)
+        outliers = (confidence < medium_threshold) | residual_outliers | bad_sections
 
         return {
             "x": x_values,
@@ -811,6 +946,10 @@ class DeepSliceAppState:
             "legacy_section_numbers": self.legacy_section_numbers,
             "ensemble": self.ensemble,
             "use_secondary_model": self.use_secondary_model,
+            "inference_batch_size": int(self.inference_batch_size),
+            "outlier_sigma_threshold": float(self.outlier_sigma_threshold),
+            "confidence_high_threshold": float(self.confidence_high_threshold),
+            "confidence_medium_threshold": float(self.confidence_medium_threshold),
             "detected_indexing_direction": self.detected_indexing_direction,
             "selected_indexing_direction": self.selected_indexing_direction,
             "predictions": prediction_records,
@@ -825,6 +964,23 @@ class DeepSliceAppState:
         self.legacy_section_numbers = bool(payload.get("legacy_section_numbers", False))
         self.ensemble = payload.get("ensemble", None)
         self.use_secondary_model = bool(payload.get("use_secondary_model", False))
+        try:
+            self.inference_batch_size = int(max(1, int(payload.get("inference_batch_size", self.inference_batch_size))))
+        except Exception:
+            self.inference_batch_size = int(max(1, self.inference_batch_size))
+
+        outlier_sigma = payload.get("outlier_sigma_threshold", self.outlier_sigma_threshold)
+        confidence_high = payload.get("confidence_high_threshold", self.confidence_high_threshold)
+        confidence_medium = payload.get("confidence_medium_threshold", self.confidence_medium_threshold)
+        try:
+            self.set_quality_controls(
+                outlier_sigma=float(outlier_sigma),
+                confidence_medium=float(confidence_medium),
+                confidence_high=float(confidence_high),
+            )
+        except Exception:
+            pass
+
         self.detected_indexing_direction = payload.get("detected_indexing_direction", None)
         self.selected_indexing_direction = payload.get("selected_indexing_direction", None)
 
@@ -833,6 +989,8 @@ class DeepSliceAppState:
             self.predictions = None
         else:
             self.predictions = pd.DataFrame(prediction_rows)
+            if len(self.predictions) > 0:
+                self._annotate_prediction_diagnostics()
 
         self.undo_stack = []
         self.redo_stack = []
