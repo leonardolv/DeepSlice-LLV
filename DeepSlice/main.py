@@ -99,6 +99,7 @@ class DSModel:
         batch_size: int = 16,
         progress_callback=None,
         log_callback=None,
+        cancel_check=None,
     ):
         """predicts the atlas position for a folder full of histological brain sections
 
@@ -188,6 +189,7 @@ class DSModel:
                 self.species,
                 progress_callback=progress_callback,
                 log_callback=log_callback,
+                cancel_check=cancel_check,
             )
         else:
             predictions = neural_network.predictions_util(
@@ -199,6 +201,7 @@ class DSModel:
                 self.species,
                 progress_callback=progress_callback,
                 log_callback=log_callback,
+                cancel_check=cancel_check,
             )
         if "width" not in predictions.columns:
             predictions["width"] = width

@@ -73,4 +73,13 @@ def generate_pdf_report(output_path: str, summary: dict, options: dict):
         line("Representative section alignments will be included here in future versions.")
         line("")
 
+    if options.get("include_angles", True):
+        pdf.setFont("Helvetica-Bold", 12)
+        line("Angle Metrics", 8 * mm)
+        pdf.setFont("Helvetica", 10)
+        line(
+            "Angle metrics are derived from DV/ML distributions and summarized in the GUI export panel."
+        )
+        line("")
+
     pdf.save()

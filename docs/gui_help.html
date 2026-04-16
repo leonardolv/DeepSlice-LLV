@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DeepSlice GUI Help</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f2f6fb;
+      --card: #ffffff;
+      --text: #1a2733;
+      --muted: #45627f;
+      --accent: #2f7bce;
+      --line: #c8d8ea;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 12px 0;
+      color: #183a5d;
+    }
+    p {
+      color: var(--muted);
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 22px 0;
+    }
+    nav a {
+      text-decoration: none;
+      color: var(--accent);
+      background: #e4eef9;
+      border: 1px solid #c4d6ec;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 14px;
+    }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    h2 {
+      margin: 0 0 8px 0;
+      color: #244e77;
+      font-size: 19px;
+    }
+    ul {
+      margin: 8px 0 0 20px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 id="global">DeepSlice GUI Help</h1>
+    <p>Use this page with F1 context help in the app.</p>
+
+    <nav>
+      <a href="#global">Global</a>
+      <a href="#ingestion">Ingestion</a>
+      <a href="#configuration">Configuration</a>
+      <a href="#prediction">Prediction</a>
+      <a href="#curation">Curation</a>
+      <a href="#export">Export</a>
+    </nav>
+
+    <section>
+      <h2>Global Shortcuts</h2>
+      <ul>
+        <li>Ctrl+1..Ctrl+5: jump to workflow steps</li>
+        <li>Ctrl+N: start a new session</li>
+        <li>Ctrl+S: save session</li>
+        <li>Ctrl+O: load session or QuickNII file</li>
+        <li>Ctrl+/: open shortcut cheat sheet</li>
+        <li>F1: open this help page for the current step</li>
+      </ul>
+    </section>
+
+    <section id="ingestion">
+      <h2>Step 1: Ingestion</h2>
+      <ul>
+        <li>Add files/folders or drag and drop.</li>
+        <li>Use naming helper for _sXXX index parsing.</li>
+        <li>Use sorting/filter to inspect large sets quickly.</li>
+        <li>Check the index table for duplicates and parse warnings.</li>
+      </ul>
+    </section>
+
+    <section id="configuration">
+      <h2>Step 2: Configuration</h2>
+      <ul>
+        <li>Select species and review atlas preview card.</li>
+        <li>Set thickness manually or auto-estimate.</li>
+        <li>Use Validate Configuration before prediction.</li>
+        <li>Read ensemble help for speed vs stability tradeoff.</li>
+      </ul>
+    </section>
+
+    <section id="prediction">
+      <h2>Step 3: Prediction</h2>
+      <ul>
+        <li>Run Alignment to start inference.</li>
+        <li>Use Cancel Alignment to stop at a safe batch boundary.</li>
+        <li>Monitor phase progress, elapsed time, and ETA.</li>
+        <li>Use console copy/clear for troubleshooting.</li>
+      </ul>
+    </section>
+
+    <section id="curation">
+      <h2>Step 4: Curation</h2>
+      <ul>
+        <li>Review confidence colors and linearity plot.</li>
+        <li>Use context menu or space key to toggle bad flags.</li>
+        <li>Apply outlier detection and angle/spacing tools.</li>
+        <li>Use Undo/Redo and confidence filtering for targeted edits.</li>
+      </ul>
+    </section>
+
+    <section id="export">
+      <h2>Step 5: Export</h2>
+      <ul>
+        <li>Choose output format and base filename.</li>
+        <li>Export writes primary format plus CSV sidecar.</li>
+        <li>Open folder / copy path for downstream workflows.</li>
+        <li>Generate or preview PDF report with selectable sections.</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

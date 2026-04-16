@@ -150,8 +150,8 @@ class DeepSliceAppState:
         atlas_slice = np.clip(atlas_slice, low, high)
         atlas_slice = (atlas_slice - low) / (high - low)
         atlas_slice = (atlas_slice * 255.0).astype(np.uint8)
-        # Rotate for viewer orientation consistency (X/Z view for coronal slice index in Y).
-        atlas_slice = np.flipud(atlas_slice.T)
+        # Keep native X/Z orientation to preserve aspect ratio relative to histology overlays.
+        atlas_slice = np.flipud(atlas_slice)
         return atlas_slice
 
     def get_atlas_slice(
@@ -317,6 +317,7 @@ class DeepSliceAppState:
         use_secondary_model: bool,
         progress_callback=None,
         log_callback=None,
+        cancel_check=None,
     ) -> Dict[str, object]:
         self.is_dirty = True
         if len(self.image_paths) == 0:
@@ -328,14 +329,17 @@ class DeepSliceAppState:
         self.use_secondary_model = use_secondary_model
 
         model = self.ensure_model(log_callback=log_callback)
+        inference_batch_size = 1 if progress_callback is not None else 16
         model.predict(
             image_list=self.image_paths,
             ensemble=ensemble,
             section_numbers=section_numbers,
             legacy_section_numbers=legacy_section_numbers,
             use_secondary_model=use_secondary_model,
+            batch_size=inference_batch_size,
             progress_callback=progress_callback,
             log_callback=log_callback,
+            cancel_check=cancel_check,
         )
 
         self.predictions = model.predictions.copy()

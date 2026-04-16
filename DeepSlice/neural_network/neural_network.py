@@ -21,16 +21,26 @@ VALID_IMAGE_FORMATS = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
 class PredictionProgressCallback(tf.keras.callbacks.Callback):
     """Keras callback used to expose prediction progress to the GUI."""
 
-    def __init__(self, total_images, phase, progress_callback):
+    def __init__(self, total_images, phase, progress_callback, cancel_check=None, batch_size: int = 1):
         super().__init__()
         self.total_images = total_images
         self.phase = phase
         self.progress_callback = progress_callback
+        self.cancel_check = cancel_check
+        self.batch_size = max(int(batch_size), 1)
+
+    def _raise_if_cancelled(self):
+        if self.cancel_check is not None and bool(self.cancel_check()):
+            raise RuntimeError("Prediction cancelled by user")
+
+    def on_predict_batch_begin(self, batch, logs=None):
+        self._raise_if_cancelled()
 
     def on_predict_batch_end(self, batch, logs=None):
+        self._raise_if_cancelled()
         if self.progress_callback is None:
             return
-        completed = min(batch + 1, self.total_images)
+        completed = min((batch + 1) * self.batch_size, self.total_images)
         self.progress_callback(completed, self.total_images, self.phase)
 
 
@@ -223,6 +233,7 @@ def predictions_util(
     species: str = "mouse",
     progress_callback=None,
     log_callback=None,
+    cancel_check=None,
 ):
     """
     Predict the image alignments
@@ -243,8 +254,12 @@ def predictions_util(
                 total_images=image_generator.n,
                 phase="primary",
                 progress_callback=progress_callback,
+                cancel_check=cancel_check,
+                batch_size=image_generator.batch_size,
             )
         ]
+    if cancel_check is not None and bool(cancel_check()):
+        raise RuntimeError("Prediction cancelled by user")
     if log_callback is not None:
         log_callback("Running primary inference pass")
 
@@ -269,6 +284,8 @@ def predictions_util(
             raise ValueError(
                 "secondary_weights is required when ensemble=True"
             )
+        if cancel_check is not None and bool(cancel_check()):
+            raise RuntimeError("Prediction cancelled by user")
         image_generator.reset()
         model = load_xception_weights(model, secondary_weights, species)
         callbacks = None
@@ -278,6 +295,8 @@ def predictions_util(
                     total_images=image_generator.n,
                     phase="secondary",
                     progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                    batch_size=image_generator.batch_size,
                 )
             ]
         if log_callback is not None:
