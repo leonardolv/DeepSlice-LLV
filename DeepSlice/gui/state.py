@@ -394,9 +394,13 @@ class DeepSliceAppState:
 
         batch_size = 2
         try:
-            import tensorflow as tf
 
-            gpu_count = len(tf.config.list_physical_devices("GPU"))
+
+            try:
+                import tensorflow as tf
+                gpu_count = len(tf.config.list_physical_devices("GPU"))
+            except Exception:
+                gpu_count = 0
             if gpu_count > 0:
                 batch_size = 8
         except Exception:

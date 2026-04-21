@@ -10,7 +10,9 @@ from ..error_logging import (
 )
 
 
-def _configure_tensorflow_runtime(logger):
+def configure_tensorflow_runtime():
+    from ..error_logging import get_logger
+    logger = get_logger('gui.app')
     """Prefer dedicated GPU, enable safe memory growth, and turn on XLA JIT when available."""
     try:
         import tensorflow as tf
@@ -85,6 +87,11 @@ def main():
 
     logger = get_logger("gui.app")
     logger.info("Starting DeepSlice GUI. Error log: %s", log_path)
+
+    import threading
+    tf_thread = threading.Thread(target=configure_tensorflow_runtime)
+    tf_thread.daemon = True
+    tf_thread.start()
     _configure_tensorflow_runtime(logger)
 
     try:

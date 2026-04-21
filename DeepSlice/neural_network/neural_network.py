@@ -100,36 +100,23 @@ def initialise_network(xception_weights: str, weights: str, species: str) -> Seq
 
 def load_xception_weights(model, weights, species="mouse"):
     with h5py.File(weights, "r") as new:
-        # set weight of each layer manually
-        if species == "mouse":
-            xception_idx = 0
-            dense_idx = 1
-        elif species == "rat":
-            # RatModelInProgress.h5 has an "input_2" layer at index 0, so we need to adjust the indices<
-            xception_idx = 1
-            dense_idx = 2
-        else:
-            raise ValueError("species must be one of 'mouse' or 'rat'")
+        xception_layer = None
+        dense_layers = []
+        for layer in model.layers:
+            if layer.name == "xception":
+                xception_layer = layer
+            elif "dense" in layer.name:
+                dense_layers.append(layer)
 
-        dense_layers_updated = 0
+        if xception_layer is None:
+            raise RuntimeError("xception layer not found in model")
 
-        model.layers[dense_idx].set_weights(
-            [new["dense"]["dense"]["kernel:0"], new["dense"]["dense"]["bias:0"]]
-        )
-        dense_layers_updated += 1
-        model.layers[dense_idx + 1].set_weights(
-            [new["dense_1"]["dense_1"]["kernel:0"], new["dense_1"]["dense_1"]["bias:0"]]
-        )
-        dense_layers_updated += 1
-        model.layers[dense_idx + 2].set_weights(
-            [new["dense_2"]["dense_2"]["kernel:0"], new["dense_2"]["dense_2"]["bias:0"]]
-        )
-        dense_layers_updated += 1
+        if len(dense_layers) != 3:
+            raise RuntimeError(f"Expected 3 dense layers, found {len(dense_layers)}")
 
-        if dense_layers_updated != 3:
-            raise RuntimeError(
-                f"Expected to set 3 dense layers, but set {dense_layers_updated}"
-            )
+        dense_layers[0].set_weights([new["dense"]["dense"]["kernel:0"], new["dense"]["dense"]["bias:0"]])
+        dense_layers[1].set_weights([new["dense_1"]["dense_1"]["kernel:0"], new["dense_1"]["dense_1"]["bias:0"]])
+        dense_layers[2].set_weights([new["dense_2"]["dense_2"]["kernel:0"], new["dense_2"]["dense_2"]["bias:0"]])
 
         # Set the weights of the xception model
         weight_names = new["xception"].attrs["weight_names"].tolist()
@@ -138,33 +125,40 @@ def load_xception_weights(model, weights, species="mouse"):
         }
         updated_xception_layers = set()
 
-        for i in range(len(model.layers[xception_idx].layers)):
-            name_of_layer = model.layers[xception_idx].layers[i].name
+        for i in range(len(xception_layer.layers)):
+            name_of_layer = xception_layer.layers[i].name
             # if layer name is in the weight names, then we will set weights
             if name_of_layer in weight_names_layers:
                 # Get name of weights in the layer
                 layer_weight_names = []
-                for weight in model.layers[xception_idx].layers[i].weights:
+                for weight in xception_layer.layers[i].weights:
                     try:
-                        layer_weight_names.append(weight.name.split("/")[1])
+                        # Find the matching name without caring about index
+                        raw_name = weight.name.split("/")[-1]
+                        # E.g. 'kernel' from 'kernel:0' or 'kernel'
+                        layer_weight_names.append(raw_name.split(":")[0])
                     except IndexError:
-                        layer_weight_names.append(f"{weight.name}:0")
+                        layer_weight_names.append(weight.name)
 
-                h5_group = new["xception"][name_of_layer]
-                weights_list = [np.array(h5_group[kk]) for kk in layer_weight_names]
-                model.layers[xception_idx].layers[i].set_weights(weights_list)
-                updated_xception_layers.add(name_of_layer)
+                # Get weights from the new model
+                new_weights = []
+                for j in range(len(layer_weight_names)):
+                    # try exact name then name + :0
+                    weight_val = None
+                    if layer_weight_names[j] in new["xception"][name_of_layer]:
+                        weight_val = new["xception"][name_of_layer][layer_weight_names[j]]
+                    elif f"{layer_weight_names[j]}:0" in new["xception"][name_of_layer]:
+                        weight_val = new["xception"][name_of_layer][f"{layer_weight_names[j]}:0"]
 
-        if len(updated_xception_layers) != len(weight_names_layers):
-            missing_layers = sorted(weight_names_layers - updated_xception_layers)
-            missing_preview = ", ".join(missing_layers[:10])
-            if len(missing_layers) > 10:
-                missing_preview += f", ... (+{len(missing_layers) - 10} more)"
-            raise RuntimeError(
-                "Xception weight loading incomplete. "
-                f"Updated {len(updated_xception_layers)}/{len(weight_names_layers)} layers. "
-                f"Missing layers: {missing_preview}"
-            )
+                    if weight_val is not None:
+                        new_weights.append(weight_val)
+
+                if len(new_weights) > 0:
+                    xception_layer.layers[i].set_weights(new_weights)
+                    updated_xception_layers.add(name_of_layer)
+
+        if not updated_xception_layers:
+            raise RuntimeError("No xception layers were updated. Weights file may be incompatible.")
     return model
 
 

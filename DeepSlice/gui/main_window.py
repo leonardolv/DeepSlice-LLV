@@ -821,8 +821,8 @@ class DeepSliceMainWindow(QMainWindow):
 
         body_split.addWidget(self.sidebar_container)
         body_split.addWidget(self.stack)
-        body_split.setStretchFactor(0, 0)
-        body_split.setStretchFactor(1, 1)
+        body_split.setStretchFactor(0, 1)
+        body_split.setStretchFactor(1, 3)
 
         root.addWidget(body_split, stretch=1)
 
@@ -1980,8 +1980,8 @@ class DeepSliceMainWindow(QMainWindow):
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
 
         root = QVBoxLayout(page)
         root.addWidget(split)
@@ -2387,8 +2387,8 @@ class DeepSliceMainWindow(QMainWindow):
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
 
         root = QVBoxLayout(page)
         root.addWidget(split)
@@ -2505,13 +2505,13 @@ class DeepSliceMainWindow(QMainWindow):
         prediction_view_split.addWidget(self.prediction_viewer)
         prediction_view_split.addWidget(self.prediction_atlas_viewer)
         prediction_view_split.setStretchFactor(0, 1)
-        prediction_view_split.setStretchFactor(1, 1)
+        prediction_view_split.setStretchFactor(1, 3)
         right_layout.addWidget(prediction_view_split, stretch=1)
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
 
         root = QVBoxLayout(page)
         root.addWidget(split)
@@ -2830,7 +2830,7 @@ class DeepSliceMainWindow(QMainWindow):
         viewer_split.addWidget(self.curation_viewer)
         viewer_split.addWidget(self.atlas_viewer)
         viewer_split.setStretchFactor(0, 1)
-        viewer_split.setStretchFactor(1, 1)
+        viewer_split.setStretchFactor(1, 3)
 
         plot_panel = QWidget()
         plot_panel_layout = QVBoxLayout(plot_panel)
@@ -2844,7 +2844,7 @@ class DeepSliceMainWindow(QMainWindow):
         self.curation_vertical_split.addWidget(viewer_split)
         self.curation_vertical_split.addWidget(plot_panel)
         self.curation_vertical_split.setStretchFactor(0, 4)
-        self.curation_vertical_split.setStretchFactor(1, 1)
+        self.curation_vertical_split.setStretchFactor(1, 3)
         self.curation_vertical_split.setSizes([680, 230])
 
         right_layout.addLayout(atlas_controls)
@@ -2856,8 +2856,8 @@ class DeepSliceMainWindow(QMainWindow):
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
 
         root = QVBoxLayout(page)
         root.addWidget(split)
@@ -2996,8 +2996,8 @@ class DeepSliceMainWindow(QMainWindow):
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
 
         root = QVBoxLayout(page)
         root.addWidget(split)
@@ -6057,8 +6057,9 @@ class DeepSliceMainWindow(QMainWindow):
 
     def _show_hardware_health(self):
         try:
-            import tensorflow as tf
 
+
+            import tensorflow as tf
             gpus = tf.config.list_physical_devices("GPU")
             build_info = tf.sysconfig.get_build_info()
             cuda_version = build_info.get("cuda_version", "unknown")
@@ -6096,6 +6097,7 @@ class DeepSliceMainWindow(QMainWindow):
 
     def _update_hardware_mode_label(self):
         try:
+
             import tensorflow as tf
             gpus = tf.config.list_physical_devices("GPU")
             mode = "GPU" if len(gpus) > 0 else "CPU"
