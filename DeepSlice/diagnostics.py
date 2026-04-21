@@ -90,8 +90,10 @@ RULE_CATALOGUE: dict[str, dict] = {
     "DS-007": {
         "title": "load_xception_weights() uses fragile layer index assumptions",
         "file": "DeepSlice/neural_network/neural_network.py",
+        "status": "resolved",
+        "resolved_in": "rat-prediction-production refactor",
         "suggested_fix": {
-            "patch": "Use named layer lookup with explicit errors when missing.",
+            "patch": "Resolved: layers are now resolved by name via model.get_layer().",
             "effort": "medium",
         },
     },
