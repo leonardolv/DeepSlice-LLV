@@ -2234,7 +2234,24 @@ class DeepSliceMainWindow(QMainWindow):
         rat_row = QHBoxLayout()
         self.rat_preview_label = QLabel()
         self.rat_preview_label.setPixmap(self._make_species_preview_pixmap("rat"))
+        self.rat_beta_badge = QLabel("Beta")
+        self.rat_beta_badge.setStyleSheet(
+            "QLabel {"
+            " background-color: #B5651D;"
+            " color: #FFFFFF;"
+            " padding: 1px 6px;"
+            " border-radius: 6px;"
+            " font-size: 10px;"
+            " font-weight: bold;"
+            "}"
+        )
+        self.rat_beta_badge.setToolTip(
+            "Rat support is in beta. Model weights are still being refined "
+            "and ensemble inference is not yet available for rat. See the "
+            "README 'Rat Support' section for the current status."
+        )
         rat_row.addWidget(self.rat_radio)
+        rat_row.addWidget(self.rat_beta_badge)
         rat_row.addStretch(1)
         rat_row.addWidget(self.rat_preview_label)
 

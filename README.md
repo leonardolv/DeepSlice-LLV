@@ -64,6 +64,34 @@ Notes:
 * Coronal orientation is currently supported in the main pipeline.
 * Existing QuickNII JSON/XML can be loaded for re-curation.
 * TIFF input is supported alongside JPG/PNG.
+
+## Rat Support (Beta)
+
+Rat alignment targets the Waxholm Space atlas of the Sprague Dawley rat brain
+(Kleven et al., 2023; 39 um isotropic voxels, 512 x 1024 x 512). The rat
+pipeline shares the same preprocessing, prediction, curation and export code
+as the mouse pipeline, but is currently labelled **Beta** in the GUI for the
+following reasons:
+
+* **Weights are still being refined.** The current rat model files
+  (`RatModelInProgress.h5`, `RatModelScratch.h5`) were trained on a smaller
+  histology set than the mouse model and have not yet been benchmarked
+  against a held-out expert-curated validation set.
+* **Ensemble inference is disabled** for rat (`ensemble_status.rat = false`
+  in `DeepSlice/metadata/config.json`). Only single-model prediction is
+  available; the ensemble checkbox in the GUI is disabled when rat is
+  selected.
+* **Only the T2*-weighted MRI volume is bundled** for the atlas-preview
+  overlay. Mouse offers both Nissl and STPT previews.
+* **Tests cover rat code paths** (see `tests/test_weight_loader.py` and
+  `tests/test_curation_state_rat.py`), but accuracy gates and a nightly
+  benchmark against expert QUINT alignments are not yet in place.
+
+If you use the rat workflow, please cite Kleven et al. (2023) for the
+Waxholm atlas in addition to the DeepSlice citation. Feedback and
+validation datasets are welcome via the issue tracker — they directly feed
+into the roadmap to remove the Beta label.
+
 ## [Installation: How to install DeepSlice](#installation)
 
 ## [Usage: How to align using DeepSlice](#basic-usage)
