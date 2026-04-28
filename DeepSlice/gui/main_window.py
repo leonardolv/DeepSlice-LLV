@@ -1241,7 +1241,7 @@ class DeepSliceMainWindow(QMainWindow):
                 action.setToolTip(path)
                 action.setVisible(True)
                 try: action.triggered.disconnect()
-                except Exception: pass
+                except (RuntimeError, TypeError): pass  # Qt raises RuntimeError when nothing is connected
                 # Lambda with default arg to capture the current path
                 action.triggered.connect(lambda checked=False, path=path: self._load_session_file(path))
             else:

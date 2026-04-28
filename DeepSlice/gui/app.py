@@ -92,7 +92,6 @@ def main():
     tf_thread = threading.Thread(target=configure_tensorflow_runtime)
     tf_thread.daemon = True
     tf_thread.start()
-    _configure_tensorflow_runtime(logger)
 
     try:
         from .main_window import launch_gui

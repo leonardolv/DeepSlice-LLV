@@ -1,3 +1,4 @@
+import logging
 from typing import Union, List, Optional
 import numpy as np
 import pandas as pd
@@ -6,6 +7,8 @@ from pathlib import Path
 from .depth_estimation import calculate_brain_center_depths
 from .plane_alignment_functions import plane_alignment
 from ..metadata import metadata_loader
+
+_logger = logging.getLogger("DeepSlice.spacing_and_indexing")
 
 
 def trim_mean(arr: np.array, percent: int) -> float:
@@ -63,6 +66,11 @@ def calculate_average_section_thickness(
         )
 
     number_spacing = section_numbers[:-1].values - section_numbers[1:].values
+    if np.any(number_spacing == 0):
+        raise ValueError(
+            "Duplicate section numbers detected (after dropping bad sections). "
+            "Each section number must be unique to compute thickness."
+        )
     # inter section depth differences
     depth_spacing = section_depth[:-1] - section_depth[1:]
     # dividing depth spacing by number spacing allows us to control for missing sections
@@ -70,6 +78,10 @@ def calculate_average_section_thickness(
         section_numbers, section_depth, species, None, method
     )
     section_thicknesses = depth_spacing / number_spacing
+    if not np.isfinite(section_thicknesses).all():
+        raise ValueError(
+            "Computed section thicknesses contain non-finite values (NaN/Inf)"
+        )
     thickness_weights = np.asarray(weighted_accuracy[1:], dtype=float)
     if len(thickness_weights) != len(section_thicknesses):
         raise ValueError(
@@ -228,10 +240,14 @@ def space_according_to_index(
                 species=species,
             )
             if not suppress:
-                print(f"predicted thickness is {section_thickness * voxel_size}µm")
+                _logger.info(
+                    "predicted thickness is %sµm", section_thickness * voxel_size
+                )
         else:
             if not suppress:
-                print(f"specified thickness is {section_thickness * voxel_size}µm")
+                _logger.info(
+                    "specified thickness is %sµm", section_thickness * voxel_size
+                )
 
         calculated_spacing = ideal_spacing(
             predictions["nr"], depths, section_thickness, bad_sections, species=species
@@ -263,9 +279,14 @@ def number_sections(filenames: List[str], legacy=False) -> List[int]:
                 )
             section_numbers.append(int(match[-1][2:]))
         else:
-            match = re.sub("[^0-9]", "", filename)
+            digits = re.sub("[^0-9]", "", filename)
             ###this gets the three numbers closest to the end
-            section_numbers.append(match[-3:])
+            tail = digits[-3:]
+            if not tail:
+                raise ValueError(
+                    f"Legacy section numbering requires at least one digit in filename: {filename}"
+                )
+            section_numbers.append(int(tail))
     return section_numbers
 
 
@@ -322,9 +343,12 @@ def set_bad_sections_util(
     bad_sections_found = len(flagged_indexes)
     # Tell the user which sections were identified as bad
     if bad_sections_found > 0:
-        print(
-            f"{bad_sections_found} sections out of {len(df)} were marked as bad, \n\
-        They are:\n {df.Filenames.iloc[flagged_indexes]}"
+        flagged_names = df.Filenames.iloc[flagged_indexes].tolist()
+        _logger.info(
+            "%s sections out of %s were marked as bad. They are: %s",
+            bad_sections_found,
+            len(df),
+            flagged_names,
         )
     return df
 
